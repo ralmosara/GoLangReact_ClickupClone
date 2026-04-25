@@ -1,0 +1,32 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Build artefacts
+bin/
+server.exe
+*.exe
+*.test
+*.out
+
+# Frontend
+frontend/node_modules
+frontend/dist
+node_modules
+
+# Local data
+storage/
+tmp/
+*.log
+
+# Docs / dev-only
+docs/
+plan.md
+README.md
+clickup_database_schema.html
+air.toml
+
+Dockerfile
+.dockerignore

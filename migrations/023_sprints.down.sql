@@ -1,0 +1,6 @@
+DROP INDEX IF EXISTS idx_tasks_sprint;
+ALTER TABLE tasks DROP COLUMN IF EXISTS points;
+ALTER TABLE tasks DROP COLUMN IF EXISTS sprint_id;
+
+DROP INDEX IF EXISTS idx_sprints_list;
+DROP TABLE IF EXISTS sprints;

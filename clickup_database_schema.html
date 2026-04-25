@@ -1,0 +1,300 @@
+
+<div id="erd" style="padding: 4px 0;"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '12px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor: dark ? '#1e1e1c' : '#f5f4f0',
+    primaryBorderColor: dark ? '#444441' : '#b4b2a9',
+    edgeLabelBackground: dark ? '#2c2c2a' : '#f1efe8',
+  },
+});
+
+const diagram = `erDiagram
+  workspaces {
+    uuid id PK
+    varchar name
+    varchar slug
+    varchar plan
+    jsonb settings
+    timestamptz created_at
+  }
+
+  users {
+    uuid id PK
+    varchar email
+    varchar display_name
+    varchar avatar_url
+    varchar timezone
+    timestamptz created_at
+  }
+
+  workspace_members {
+    uuid id PK
+    uuid workspace_id FK
+    uuid user_id FK
+    varchar role
+    timestamptz joined_at
+  }
+
+  spaces {
+    uuid id PK
+    uuid workspace_id FK
+    varchar name
+    varchar color
+    boolean is_private
+    jsonb features
+    int sort_order
+  }
+
+  space_members {
+    uuid id PK
+    uuid space_id FK
+    uuid user_id FK
+    varchar permission
+  }
+
+  folders {
+    uuid id PK
+    uuid space_id FK
+    varchar name
+    boolean is_hidden
+    int sort_order
+  }
+
+  lists {
+    uuid id PK
+    uuid folder_id FK
+    uuid space_id FK
+    varchar name
+    varchar status_config
+    uuid default_assignee FK
+    int sort_order
+  }
+
+  statuses {
+    uuid id PK
+    uuid list_id FK
+    varchar name
+    varchar color
+    varchar type
+    int sort_order
+  }
+
+  tasks {
+    uuid id PK
+    uuid list_id FK
+    uuid parent_task_id FK
+    uuid status_id FK
+    uuid creator_id FK
+    varchar name
+    text description
+    int priority
+    int points
+    timestamptz due_date
+    timestamptz start_date
+    boolean archived
+    int sort_order
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  task_assignees {
+    uuid id PK
+    uuid task_id FK
+    uuid user_id FK
+    timestamptz assigned_at
+  }
+
+  task_tags {
+    uuid id PK
+    uuid task_id FK
+    uuid tag_id FK
+  }
+
+  tags {
+    uuid id PK
+    uuid workspace_id FK
+    varchar name
+    varchar color
+  }
+
+  comments {
+    uuid id PK
+    uuid task_id FK
+    uuid author_id FK
+    uuid parent_comment_id FK
+    text body
+    jsonb reactions
+    boolean resolved
+    timestamptz created_at
+  }
+
+  attachments {
+    uuid id PK
+    uuid task_id FK
+    uuid comment_id FK
+    uuid uploader_id FK
+    varchar filename
+    bigint file_size
+    varchar mime_type
+    varchar storage_url
+    timestamptz created_at
+  }
+
+  custom_fields {
+    uuid id PK
+    uuid list_id FK
+    uuid workspace_id FK
+    varchar name
+    varchar field_type
+    jsonb config
+    boolean required
+    int sort_order
+  }
+
+  task_custom_values {
+    uuid id PK
+    uuid task_id FK
+    uuid custom_field_id FK
+    text value_text
+    numeric value_number
+    timestamptz value_date
+    jsonb value_json
+  }
+
+  time_entries {
+    uuid id PK
+    uuid task_id FK
+    uuid user_id FK
+    timestamptz start_time
+    timestamptz end_time
+    int duration_seconds
+    text note
+    boolean billable
+    timestamptz created_at
+  }
+
+  task_dependencies {
+    uuid id PK
+    uuid task_id FK
+    uuid depends_on_task_id FK
+    varchar dep_type
+  }
+
+  views {
+    uuid id PK
+    uuid list_id FK
+    uuid space_id FK
+    uuid creator_id FK
+    varchar name
+    varchar view_type
+    jsonb filters
+    jsonb sort_config
+    jsonb group_by
+    boolean is_shared
+  }
+
+  automations {
+    uuid id PK
+    uuid workspace_id FK
+    uuid space_id FK
+    uuid list_id FK
+    varchar name
+    jsonb trigger_config
+    jsonb action_config
+    boolean enabled
+    timestamptz last_run_at
+  }
+
+  notifications {
+    uuid id PK
+    uuid user_id FK
+    uuid task_id FK
+    varchar event_type
+    boolean read
+    timestamptz created_at
+  }
+
+  audit_log {
+    uuid id PK
+    uuid workspace_id FK
+    uuid actor_id FK
+    varchar entity_type
+    uuid entity_id
+    varchar action
+    jsonb diff
+    timestamptz occurred_at
+  }
+
+  workspaces ||--o{ workspace_members : "has"
+  users ||--o{ workspace_members : "belongs to"
+  workspaces ||--o{ spaces : "contains"
+  spaces ||--o{ folders : "groups"
+  folders ||--o{ lists : "holds"
+  spaces ||--o{ lists : "direct lists"
+  lists ||--o{ statuses : "defines"
+  lists ||--o{ tasks : "contains"
+  tasks ||--o{ tasks : "subtasks"
+  tasks ||--o{ task_assignees : "assigned"
+  users ||--o{ task_assignees : "works on"
+  tasks ||--o{ task_tags : "tagged"
+  tags ||--o{ task_tags : "used in"
+  workspaces ||--o{ tags : "owns"
+  tasks ||--o{ comments : "discussed in"
+  users ||--o{ comments : "writes"
+  comments ||--o{ comments : "replies"
+  tasks ||--o{ attachments : "has"
+  comments ||--o{ attachments : "has"
+  lists ||--o{ custom_fields : "defines"
+  workspaces ||--o{ custom_fields : "global"
+  tasks ||--o{ task_custom_values : "stores"
+  custom_fields ||--o{ task_custom_values : "defines"
+  tasks ||--o{ time_entries : "tracked in"
+  users ||--o{ time_entries : "logs"
+  tasks ||--o{ task_dependencies : "depends on"
+  lists ||--o{ views : "has"
+  spaces ||--o{ views : "has"
+  workspaces ||--o{ automations : "runs"
+  users ||--o{ notifications : "receives"
+  workspaces ||--o{ audit_log : "records"
+  spaces ||--o{ space_members : "has"
+  users ||--o{ space_members : "in"
+`;
+
+const { svg } = await mermaid.render('erd-svg', diagram);
+document.getElementById('erd').innerHTML = svg;
+
+document.querySelectorAll('#erd svg .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+document.querySelectorAll('#erd svg .row-rect-odd path, #erd svg .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
