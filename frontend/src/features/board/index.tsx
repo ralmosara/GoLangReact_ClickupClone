@@ -129,6 +129,7 @@ export function BoardPage() {
   const [showSaveView, setShowSaveView] = useState(false)
   const [localConfig, setLocalConfig] = useState<ViewConfig>({})
   const [localKind, setLocalKind] = useState<ViewKind>('board')
+  const [showArchived, setShowArchived] = useState(false)
 
   const { data: list } = useQuery({
     queryKey: ['list', listId],
@@ -141,8 +142,11 @@ export function BoardPage() {
     enabled: !!listId,
   })
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['tasks', listId],
-    queryFn: () => api.get(`tasks?list_id=${listId}`).json<Task[]>(),
+    queryKey: ['tasks', listId, { archived: showArchived }],
+    queryFn: () =>
+      api
+        .get(`tasks?list_id=${listId}${showArchived ? '&archived=true' : ''}`)
+        .json<Task[]>(),
     enabled: !!listId,
   })
   const { data: workspaceTags = [] } = useQuery({
@@ -278,6 +282,14 @@ export function BoardPage() {
             Save
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setShowStatusMgr(true)}>Statuses</Button>
+          <Button
+            variant={showArchived ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => setShowArchived((v) => !v)}
+            title="Toggle archived tasks"
+          >
+            {showArchived ? 'Showing archived' : 'Show archived'}
+          </Button>
           <Button onClick={() => { setCreateForStatus(undefined); setShowCreate(true) }} size="sm">Add Task</Button>
         </div>
       </div>

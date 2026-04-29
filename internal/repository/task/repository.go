@@ -163,6 +163,13 @@ func (r *Repo) Reorder(ctx context.Context, id uuid.UUID, statusID *uuid.UUID, p
 	return err
 }
 
+func (r *Repo) SetArchived(ctx context.Context, id uuid.UUID, archived bool) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE tasks SET archived=$2, updated_at=NOW() WHERE id=$1`,
+		id, archived)
+	return err
+}
+
 func (r *Repo) MaxPosition(ctx context.Context, listID uuid.UUID, statusID *uuid.UUID) (float64, error) {
 	var max *float64
 	err := r.pool.QueryRow(ctx,

@@ -27,6 +27,9 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/tasks/{id}/subtasks", h.createSubtask)
 	r.Get("/tasks/{id}/subtasks", h.listSubtasks)
 
+	r.Post("/tasks/{id}/archive", h.archive)
+	r.Post("/tasks/{id}/unarchive", h.unarchive)
+
 	r.Get("/tasks/{id}/assignees", h.listAssignees)
 	r.Post("/tasks/{id}/assignees", h.addAssignee)
 	r.Delete("/tasks/{id}/assignees/{userID}", h.removeAssignee)
@@ -85,6 +88,10 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Get("include_subs") == "true" {
 		f.IncludeSubs = true
+	}
+	if v := q.Get("archived"); v != "" {
+		b := v == "true" || v == "1"
+		f.Archived = &b
 	}
 	res, err := h.svc.List(r.Context(), f)
 	if err != nil {
@@ -212,6 +219,44 @@ func (h *Handler) createSubtask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, res)
+}
+
+func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Err(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	res, err := h.svc.Archive(r.Context(), uid, id)
+	if err != nil {
+		httpx.Err(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
+}
+
+func (h *Handler) unarchive(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.Err(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	res, err := h.svc.Unarchive(r.Context(), uid, id)
+	if err != nil {
+		httpx.Err(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) listSubtasks(w http.ResponseWriter, r *http.Request) {
