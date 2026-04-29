@@ -19,6 +19,8 @@ import { WhiteboardsPage } from './features/whiteboards/WhiteboardsPage'
 import { FormsPage } from './features/forms/FormsPage'
 import { PublicFormPage } from './features/forms/PublicFormPage'
 import { TemplatesPage } from './features/templates/TemplatesPage'
+import { CredentialsPage } from './features/credentials/CredentialsPage'
+import { AccomplishmentsPage } from './features/accomplishments/AccomplishmentsPage'
 import { useAuthStore } from './store/auth'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -84,6 +86,8 @@ export function AppRouter() {
         <Route path="whiteboards" element={<WhiteboardsPage />} />
         <Route path="forms" element={<FormsPage />} />
         <Route path="templates" element={<TemplatesPage />} />
+        <Route path="credentials" element={<CredentialsPage />} />
+        <Route path="accomplishments" element={<AccomplishmentsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

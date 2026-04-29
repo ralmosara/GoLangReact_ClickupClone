@@ -92,6 +92,29 @@ make fe
 ```
 App runs at http://localhost:5173 — Vite proxies `/api` and `/ws` to `:8080`.
 
+#### Running the Go backend without `make`
+On Windows (or anywhere `make` isn't installed), run the equivalent `go` commands directly from the repo root:
+
+```bash
+# Apply migrations and exit
+go run ./cmd/server -migrate
+
+# Run the server (auto-applies migrations on boot when AUTO_MIGRATE=true)
+go run ./cmd/server
+
+# Build a static binary into ./bin
+go build -o bin/server ./cmd/server
+./bin/server                          # or .\bin\server.exe on Windows
+
+# Seed the database with sample data
+go run ./scripts/seed.go
+
+# Tidy modules
+go mod tidy
+```
+
+The server reads config from `.env` in the working directory, so always invoke these from the repo root. It listens on `:8080` by default — override with `PORT=...` in `.env`. Logs stream to stdout; press `Ctrl+C` to stop.
+
 ## Migrations
 The server has a built-in forward-only migration runner — no `golang-migrate` CLI required.
 It reads `migrations/*.up.sql` in lexicographic order and tracks applied versions in the `schema_migrations` table.

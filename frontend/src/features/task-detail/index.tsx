@@ -87,6 +87,15 @@ export function TaskDetailPage() {
     onSuccess: () => navigate(`/workspaces/${workspaceId}`),
   })
 
+  const archiveTask = useMutation({
+    mutationFn: (archived: boolean) =>
+      api.post(`tasks/${taskId}/${archived ? 'archive' : 'unarchive'}`).json<Task>(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['task', taskId], updated)
+      queryClient.invalidateQueries({ queryKey: ['tasks', updated.list_id] })
+    },
+  })
+
   if (isLoading) return <PageSpinner />
 
   if (!task) {
@@ -340,7 +349,27 @@ export function TaskDetailPage() {
         </div>
       </div>
 
-      <div className="mt-5 flex justify-end">
+      <div className="mt-5 flex justify-end gap-2">
+        {task.archived ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => archiveTask.mutate(false)}
+            disabled={archiveTask.isPending}
+          >
+            Unarchive
+          </Button>
+        ) : task.completed_at ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => archiveTask.mutate(true)}
+            disabled={archiveTask.isPending}
+            title="Hide this completed task from the board. It still shows in your accomplishments report."
+          >
+            Archive
+          </Button>
+        ) : null}
         <Button
           variant="danger"
           size="sm"

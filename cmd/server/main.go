@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/yourorg/clickup/internal/authz"
 	autoeng "github.com/yourorg/clickup/internal/automation"
 	"github.com/yourorg/clickup/internal/config"
+	cryptox "github.com/yourorg/clickup/internal/crypto"
 	"github.com/yourorg/clickup/internal/db"
 	"github.com/yourorg/clickup/internal/domain"
 	"github.com/yourorg/clickup/internal/middleware"
@@ -37,6 +39,7 @@ import (
 	automationRepo "github.com/yourorg/clickup/internal/repository/automation"
 	channelRepo "github.com/yourorg/clickup/internal/repository/channel"
 	commentRepo "github.com/yourorg/clickup/internal/repository/comment"
+	credentialRepo "github.com/yourorg/clickup/internal/repository/credential"
 	customfieldRepo "github.com/yourorg/clickup/internal/repository/customfield"
 	customvalueRepo "github.com/yourorg/clickup/internal/repository/customvalue"
 	dashboardRepo "github.com/yourorg/clickup/internal/repository/dashboard"
@@ -51,6 +54,7 @@ import (
 	sprintRepo "github.com/yourorg/clickup/internal/repository/sprint"
 	memberRepo "github.com/yourorg/clickup/internal/repository/member"
 	notificationRepo "github.com/yourorg/clickup/internal/repository/notification"
+	reportRepo "github.com/yourorg/clickup/internal/repository/report"
 	searchRepo "github.com/yourorg/clickup/internal/repository/search"
 	spaceRepo "github.com/yourorg/clickup/internal/repository/space"
 	statusRepo "github.com/yourorg/clickup/internal/repository/status"
@@ -68,6 +72,7 @@ import (
 	automationSvc "github.com/yourorg/clickup/internal/service/automation"
 	chatSvc "github.com/yourorg/clickup/internal/service/chat"
 	commentSvc "github.com/yourorg/clickup/internal/service/comment"
+	credentialSvc "github.com/yourorg/clickup/internal/service/credential"
 	customfieldSvc "github.com/yourorg/clickup/internal/service/customfield"
 	dashboardSvc "github.com/yourorg/clickup/internal/service/dashboard"
 	dependencySvc "github.com/yourorg/clickup/internal/service/dependency"
@@ -79,6 +84,7 @@ import (
 	listSvc "github.com/yourorg/clickup/internal/service/list"
 	memberSvc "github.com/yourorg/clickup/internal/service/member"
 	notificationSvc "github.com/yourorg/clickup/internal/service/notification"
+	reportSvc "github.com/yourorg/clickup/internal/service/report"
 	searchSvc "github.com/yourorg/clickup/internal/service/search"
 	spaceSvc "github.com/yourorg/clickup/internal/service/space"
 	statusSvc "github.com/yourorg/clickup/internal/service/status"
@@ -96,6 +102,7 @@ import (
 	automationHandler "github.com/yourorg/clickup/internal/handler/automation"
 	chatHandler "github.com/yourorg/clickup/internal/handler/chat"
 	commentHandler "github.com/yourorg/clickup/internal/handler/comment"
+	credentialHandler "github.com/yourorg/clickup/internal/handler/credential"
 	customfieldHandler "github.com/yourorg/clickup/internal/handler/customfield"
 	dashboardHandler "github.com/yourorg/clickup/internal/handler/dashboard"
 	dependencyHandler "github.com/yourorg/clickup/internal/handler/dependency"
@@ -107,6 +114,7 @@ import (
 	listHandler "github.com/yourorg/clickup/internal/handler/list"
 	memberHandler "github.com/yourorg/clickup/internal/handler/member"
 	notificationHandler "github.com/yourorg/clickup/internal/handler/notification"
+	reportHandler "github.com/yourorg/clickup/internal/handler/report"
 	searchHandler "github.com/yourorg/clickup/internal/handler/search"
 	spaceHandler "github.com/yourorg/clickup/internal/handler/space"
 	statusHandler "github.com/yourorg/clickup/internal/handler/status"
@@ -135,6 +143,16 @@ func main() {
 
 	if cfg.DBDSN == "" {
 		logger.Error("DB_DSN is required (see .env.example)")
+		os.Exit(1)
+	}
+
+	// Resolve the credentials-vault encryption key. Production must set a real
+	// 32-byte hex key; in development we generate a deterministic dev key from
+	// the JWT secret so a fresh checkout boots without extra config — but log a
+	// warning so it's obvious this is not safe for prod.
+	credKey, err := resolveCredentialsKey(cfg, logger)
+	if err != nil {
+		logger.Error("credentials key invalid", "err", err)
 		os.Exit(1)
 	}
 
@@ -188,6 +206,7 @@ func main() {
 	lRepo := listRepo.New(pool)
 	tRepo := taskRepo.New(pool)
 	cRepo := commentRepo.New(pool)
+	credRepo := credentialRepo.New(pool)
 	stRepo := statusRepo.New(pool)
 	tgRepo := tagRepo.New(pool)
 	atRepo := attachmentRepo.New(pool)
@@ -212,6 +231,7 @@ func main() {
 	wbRepo := whiteboardRepo.New(pool)
 	fmRepo := formRepo.New(pool)
 	tplRepo := templateRepo.New(pool)
+	repRepo := reportRepo.New(pool)
 
 	// cross-cutting infra
 	dispatcher := notify.New(nRepo, hub, logger)
@@ -239,6 +259,7 @@ func main() {
 		Notify:   dispatcher,
 		Audit:    recorder,
 	})
+	credSvc := credentialSvc.New(credRepo, credKey, wSvc)
 	stSvc := statusSvc.New(stRepo, hub, recorder)
 	tgSvc := tagSvc.New(tgRepo, recorder)
 	atSvc := attachmentSvc.New(atRepo, store, hub, recorder)
@@ -311,6 +332,14 @@ func main() {
 			return dSvc.Create(ctx, actor, docSvc.CreateInput{WorkspaceID: workspaceID, ParentID: parentID, Title: title, Content: content})
 		},
 	}, recorder)
+	repSvc := reportSvc.New(repRepo, wSvc, reportSvc.Lookups{
+		GetWorkspace: func(ctx context.Context, id uuid.UUID) (*domain.Workspace, error) {
+			return wsRepo.GetByID(ctx, id)
+		},
+		GetUser: func(ctx context.Context, id uuid.UUID) (*domain.User, error) {
+			return uRepo.GetByID(ctx, id)
+		},
+	})
 
 	// Automation engine needs callbacks into the services it can already invoke.
 	engine := autoeng.New(autoRepo, pool, autoeng.Actions{
@@ -347,6 +376,7 @@ func main() {
 	lH := listHandler.New(lSvc)
 	tH := taskHandler.New(tSvc)
 	cH := commentHandler.New(cSvc)
+	credH := credentialHandler.New(credSvc)
 	stH := statusHandler.New(stSvc)
 	tgH := tagHandler.New(tgSvc)
 	atH := attachmentHandler.New(atSvc)
@@ -367,6 +397,7 @@ func main() {
 	wbH := whiteboardHandler.New(wbSvc)
 	fmH := formHandler.New(fmSvc)
 	tplH := templateHandler.New(tplSvc)
+	repH := reportHandler.New(repSvc)
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
@@ -399,6 +430,8 @@ func main() {
 			lH.Routes(pr)
 			tH.Routes(pr)
 			cH.Routes(pr)
+			credH.Routes(pr)
+			repH.Routes(pr)
 			stH.Routes(pr)
 			tgH.Routes(pr)
 			atH.Routes(pr)
@@ -452,6 +485,35 @@ func main() {
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	logger.Info("server stopped")
+}
+
+// resolveCredentialsKey returns the 32-byte AES-GCM key for the credentials
+// vault. In production CREDENTIALS_ENCRYPTION_KEY (hex, 64 chars) is required;
+// in development we derive a deterministic key from JWT_SECRET so a fresh
+// checkout boots, but log a loud warning.
+func resolveCredentialsKey(cfg *config.Config, logger *slog.Logger) ([]byte, error) {
+	if cfg.CredentialsEncryptionKey != "" {
+		key, err := hex.DecodeString(cfg.CredentialsEncryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("CREDENTIALS_ENCRYPTION_KEY is not valid hex: %w", err)
+		}
+		if len(key) != cryptox.KeySize {
+			return nil, fmt.Errorf("CREDENTIALS_ENCRYPTION_KEY must decode to %d bytes (got %d)", cryptox.KeySize, len(key))
+		}
+		return key, nil
+	}
+	if cfg.AppEnv != "development" {
+		return nil, errors.New("CREDENTIALS_ENCRYPTION_KEY is required in non-development environments")
+	}
+	logger.Warn("USING DEV ENCRYPTION KEY for credentials vault — DO NOT USE IN PROD. Set CREDENTIALS_ENCRYPTION_KEY to a 32-byte hex value.")
+	// Deterministic dev key derived from the JWT secret. Stable across restarts
+	// so previously-stored entries can still be decrypted in dev.
+	key := make([]byte, cryptox.KeySize)
+	seed := []byte("clickup-credentials-dev-key/" + cfg.JWTSecret)
+	for i := range key {
+		key[i] = seed[i%len(seed)]
+	}
+	return key, nil
 }
 
 func corsMiddleware() func(http.Handler) http.Handler {

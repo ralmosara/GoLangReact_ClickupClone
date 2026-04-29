@@ -55,4 +55,7 @@ type TaskRepo interface {
 
 	// MaxPosition returns the highest position in the given (list, status) bucket.
 	MaxPosition(ctx context.Context, listID uuid.UUID, statusID *uuid.UUID) (float64, error)
+
+	// SetArchived flips the archived flag without touching other columns.
+	SetArchived(ctx context.Context, id uuid.UUID, archived bool) error
 }

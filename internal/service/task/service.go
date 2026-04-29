@@ -389,6 +389,65 @@ func (s *Service) ChangeStatus(ctx context.Context, actor, taskID, statusID uuid
 	return err
 }
 
+func (s *Service) Archive(ctx context.Context, actor, id uuid.UUID) (*domain.Task, error) {
+	t, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, errors.New("not found")
+	}
+	if t.CompletedAt == nil {
+		return nil, errors.New("only completed tasks can be archived")
+	}
+	if t.Archived {
+		return t, nil
+	}
+	if err := s.repo.SetArchived(ctx, id, true); err != nil {
+		return nil, err
+	}
+	t.Archived = true
+	s.publish(t, ws.EventTaskUpdated, actor)
+	if s.audit != nil {
+		s.audit.Record(ctx, audit.Entry{
+			ActorID:    &actor,
+			EntityType: "task",
+			EntityID:   &t.ID,
+			Verb:       "archived",
+			After:      t,
+		})
+	}
+	return t, nil
+}
+
+func (s *Service) Unarchive(ctx context.Context, actor, id uuid.UUID) (*domain.Task, error) {
+	t, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, errors.New("not found")
+	}
+	if !t.Archived {
+		return t, nil
+	}
+	if err := s.repo.SetArchived(ctx, id, false); err != nil {
+		return nil, err
+	}
+	t.Archived = false
+	s.publish(t, ws.EventTaskUpdated, actor)
+	if s.audit != nil {
+		s.audit.Record(ctx, audit.Entry{
+			ActorID:    &actor,
+			EntityType: "task",
+			EntityID:   &t.ID,
+			Verb:       "unarchived",
+			After:      t,
+		})
+	}
+	return t, nil
+}
+
 // --- assignee helpers -------------------------------------------------------
 
 func (s *Service) AddAssignee(ctx context.Context, actor, taskID, userID uuid.UUID) error {

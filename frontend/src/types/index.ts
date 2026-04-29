@@ -497,3 +497,35 @@ export interface Template {
   created_at: string
   updated_at: string
 }
+
+export interface AccomplishmentTask {
+  id: string
+  name: string
+  list_id: string
+  list_name: string
+  archived: boolean
+  completed_at: string
+}
+
+export interface AccomplishmentBucket {
+  period: string
+  starts_at: string
+  ends_at: string
+  count: number
+  tasks: AccomplishmentTask[]
+}
+
+export interface Credential {
+  id: string
+  workspace_id: string
+  user_id: string
+  name: string
+  url: string
+  username: string
+  // Only present on the detail fetch (GET /workspaces/{wsId}/credentials/{id}).
+  // Omitted from list responses and from create/update responses.
+  password?: string
+  notes: string
+  created_at: string
+  updated_at: string
+}

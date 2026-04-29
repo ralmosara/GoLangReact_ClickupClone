@@ -8,6 +8,7 @@ import {
   Bell,
   Bot,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
@@ -17,14 +18,19 @@ import {
   FileText,
   Flag,
   Inbox,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
+  Palette,
+  Pencil,
   Plus,
   Presentation,
   Search,
   Settings,
   Target,
+  Trash2,
   Users,
 } from 'lucide-react'
 
@@ -84,6 +90,66 @@ function CreateSpaceModal({ workspaceId, onClose }: { workspaceId: string; onClo
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button onClick={() => mut.mutate()} disabled={!name.trim() || mut.isPending} loading={mut.isPending}>
             Create space
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function EditSpaceModal({
+  space,
+  focus = 'name',
+  onClose,
+}: {
+  space: Space
+  focus?: 'name' | 'color'
+  onClose: () => void
+}) {
+  const [name, setName] = useState(space.name)
+  const [color, setColor] = useState(space.color || '#6366f1')
+
+  const mut = useMutation({
+    mutationFn: () =>
+      api.patch(`spaces/${space.id}`, { json: { name, color } }).json<Space>(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spaces', space.workspace_id] })
+      onClose()
+    },
+  })
+
+  const dirty = name.trim() !== space.name || color !== (space.color || '#6366f1')
+  const canSave = !!name.trim() && dirty && !mut.isPending
+
+  return (
+    <Modal open title="Edit space" description="Rename or change the accent color." onClose={onClose}>
+      <div className="space-y-4">
+        <Input
+          label="Space name"
+          placeholder="e.g. Engineering"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && canSave && mut.mutate()}
+          autoFocus={focus === 'name'}
+        />
+        <div>
+          <label className="block text-xs font-medium text-ink-2 mb-2">Accent</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              autoFocus={focus === 'color'}
+              className="h-9 w-14 rounded-lg border border-ink-5/40 cursor-pointer bg-transparent"
+            />
+            <span className="text-xs text-ink-4 font-mono">{color}</span>
+          </div>
+        </div>
+        {mut.error && <p className="text-red-500 text-xs">{String(mut.error)}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => mut.mutate()} disabled={!canSave} loading={mut.isPending}>
+            Save changes
           </Button>
         </div>
       </div>
@@ -223,6 +289,11 @@ function Sidebar({ workspaceId, onCreateSpace }: { workspaceId: string; onCreate
           label="Inbox"
           badge={<InboxBadge />}
         />
+        <PrimaryLink
+          to={`/workspaces/${workspaceId}/credentials`}
+          icon={<KeyRound className="w-4 h-4" />}
+          label="Credentials"
+        />
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pt-4 pb-3 relative">
@@ -237,6 +308,7 @@ function Sidebar({ workspaceId, onCreateSpace }: { workspaceId: string; onCreate
           <NavItem to={`/workspaces/${workspaceId}/goals`}       icon={<Target className="w-4 h-4" />}          label="Goals" />
           <NavItem to={`/workspaces/${workspaceId}/sprints`}     icon={<Flag className="w-4 h-4" />}            label="Sprints" />
           <NavItem to={`/workspaces/${workspaceId}/time-report`} icon={<Clock3 className="w-4 h-4" />}          label="Time report" />
+          <NavItem to={`/workspaces/${workspaceId}/accomplishments`} icon={<CheckCircle2 className="w-4 h-4" />} label="Accomplishments" />
         </Section>
 
         <Section label="Automate">
@@ -506,6 +578,7 @@ function SidebarIconButton({
 function SpaceSection({ space, workspaceId }: { space: Space; workspaceId: string }) {
   const [open, setOpen] = useState(true)
   const [createList, setCreateList] = useState(false)
+  const [editing, setEditing] = useState<null | 'name' | 'color'>(null)
 
   const listsQ = useQuery({
     queryKey: ['lists', space.id],
@@ -530,6 +603,11 @@ function SpaceSection({ space, workspaceId }: { space: Space; workspaceId: strin
         <span className="flex-1 text-[12px] font-semibold text-white/85 truncate uppercase tracking-wide">
           {space.name}
         </span>
+        <SpaceMenu
+          space={space}
+          onRename={() => setEditing('name')}
+          onChangeColor={() => setEditing('color')}
+        />
         <button
           onClick={() => setCreateList(true)}
           className="opacity-0 group-hover/space:opacity-100 h-5 w-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/[0.08] transition-all"
@@ -564,7 +642,79 @@ function SpaceSection({ space, workspaceId }: { space: Space; workspaceId: strin
       {createList && (
         <CreateListModal space={space} workspaceId={workspaceId} onClose={() => setCreateList(false)} />
       )}
+      {editing && (
+        <EditSpaceModal space={space} focus={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
+  )
+}
+
+function SpaceMenu({
+  space,
+  onRename,
+  onChangeColor,
+}: {
+  space: Space
+  onRename: () => void
+  onChangeColor: () => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  const del = useMutation({
+    mutationFn: () => api.delete(`spaces/${space.id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['spaces', space.workspace_id] }),
+  })
+
+  const handleDelete = () => {
+    setOpen(false)
+    if (!confirm(`Delete space "${space.name}"? This cannot be undone.`)) return
+    del.mutate()
+  }
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className={cn(
+            'h-5 w-5 flex items-center justify-center rounded text-white/50 hover:text-white hover:bg-white/[0.08] transition-all',
+            open ? 'opacity-100 bg-white/[0.08] text-white' : 'opacity-0 group-hover/space:opacity-100',
+          )}
+          title="Space options"
+          aria-label="Space options"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreHorizontal className="w-3 h-3" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          className="w-[180px] bg-surface border border-ink-5/30 rounded-xl shadow-modal p-1.5 z-50 animate-fade-in"
+        >
+          <MenuItem
+            icon={<Pencil className="w-4 h-4" />}
+            onClick={() => { setOpen(false); onRename() }}
+          >
+            Rename
+          </MenuItem>
+          <MenuItem
+            icon={<Palette className="w-4 h-4" />}
+            onClick={() => { setOpen(false); onChangeColor() }}
+          >
+            Change color
+          </MenuItem>
+          <div className="h-px bg-ink-5/20 my-1" />
+          <MenuItem
+            icon={<Trash2 className="w-4 h-4" />}
+            onClick={handleDelete}
+            danger
+          >
+            Delete
+          </MenuItem>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }
 
