@@ -375,7 +375,7 @@ func main() {
 	fH := folderHandler.New(fSvc, policy)
 	lH := listHandler.New(lSvc, policy)
 	tH := taskHandler.New(tSvc, policy)
-	cH := commentHandler.New(cSvc)
+	cH := commentHandler.New(cSvc, policy)
 	credH := credentialHandler.New(credSvc)
 	stH := statusHandler.New(stSvc)
 	tgH := tagHandler.New(tgSvc)

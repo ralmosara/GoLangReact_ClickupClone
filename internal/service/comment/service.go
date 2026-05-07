@@ -111,6 +111,10 @@ func (s *Service) Create(ctx context.Context, authorID uuid.UUID, in CreateInput
 	return c, nil
 }
 
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*domain.Comment, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
 func (s *Service) ListByTask(ctx context.Context, taskID uuid.UUID) ([]domain.Comment, error) {
 	return s.repo.ListByTask(ctx, taskID)
 }

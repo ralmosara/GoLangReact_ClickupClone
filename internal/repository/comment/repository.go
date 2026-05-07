@@ -21,6 +21,18 @@ func (r *Repo) Create(ctx context.Context, c *domain.Comment) error {
 	`, c.TaskID, c.AuthorID, c.Body).Scan(&c.ID, &c.CreatedAt, &c.UpdatedAt)
 }
 
+func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Comment, error) {
+	var c domain.Comment
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, task_id, author_id, body, created_at, updated_at
+		FROM comments WHERE id=$1
+	`, id).Scan(&c.ID, &c.TaskID, &c.AuthorID, &c.Body, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func (r *Repo) ListByTask(ctx context.Context, taskID uuid.UUID) ([]domain.Comment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, task_id, author_id, body, created_at, updated_at

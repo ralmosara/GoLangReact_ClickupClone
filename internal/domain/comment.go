@@ -18,6 +18,7 @@ type Comment struct {
 
 type CommentRepo interface {
 	Create(ctx context.Context, c *Comment) error
+	GetByID(ctx context.Context, id uuid.UUID) (*Comment, error)
 	ListByTask(ctx context.Context, taskID uuid.UUID) ([]Comment, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
