@@ -236,7 +236,7 @@ func main() {
 	// cross-cutting infra
 	dispatcher := notify.New(nRepo, hub, logger)
 	recorder := audit.New(auRepo, logger)
-	_ = authz.New(pool) // policy layer; wired into handlers as they adopt it
+	policy := authz.New(pool)
 
 	// services
 	uSvc := userSvc.New(uRepo, cfg.JWTSecret)
@@ -371,10 +371,10 @@ func main() {
 	// handlers
 	uH := userHandler.New(uSvc)
 	wH := workspaceHandler.New(wSvc)
-	spH := spaceHandler.New(spSvc)
-	fH := folderHandler.New(fSvc)
-	lH := listHandler.New(lSvc)
-	tH := taskHandler.New(tSvc)
+	spH := spaceHandler.New(spSvc, policy)
+	fH := folderHandler.New(fSvc, policy)
+	lH := listHandler.New(lSvc, policy)
+	tH := taskHandler.New(tSvc, policy)
 	cH := commentHandler.New(cSvc)
 	credH := credentialHandler.New(credSvc)
 	stH := statusHandler.New(stSvc)
@@ -383,7 +383,7 @@ func main() {
 	nH := notificationHandler.New(nSvc)
 	auH := auditHandler.New(auSvc)
 	mH := memberHandler.New(mSvc)
-	vH := viewHandler.New(vSvc)
+	vH := viewHandler.New(vSvc, policy)
 	cfH := customfieldHandler.New(cfSvc)
 	teH := timeentryHandler.New(teSvc)
 	depH := dependencyHandler.New(depSvc)

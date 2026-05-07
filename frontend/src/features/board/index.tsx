@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Save } from 'lucide-react'
+import { Save, Plus } from 'lucide-react'
 
 import { api } from '../../lib/api'
 import { queryClient } from '../../lib/queryClient'
 import { rooms } from '../../lib/ws'
 import { useWsEvent, useWsRooms } from '../../hooks/useWebSocket'
 import { Button, Input, Modal, PageSpinner } from '../../components/ui'
-import { PRIORITY_LABELS } from '../../lib/utils'
+import { PRIORITY_LABELS, cn } from '../../lib/utils'
 import type { List, Status, Tag, Task, View, ViewConfig, ViewKind } from '../../types'
 
 import { StatusManagerDialog } from './components/StatusManagerDialog'
@@ -252,17 +252,18 @@ export function BoardPage() {
 
   return (
     <div className="h-full flex flex-col bg-canvas">
-      <div className="flex items-center justify-between px-7 py-4 border-b border-ink-5/20 bg-surface/50 backdrop-blur-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-7 py-3 sm:py-4 gap-4 border-b border-ink-5/20 bg-surface/50 backdrop-blur-sm">
         <div className="min-w-0">
-          <h1 className="text-base font-semibold text-ink-1 truncate">{list?.name ?? 'Board'}</h1>
-          <p className="text-xs text-ink-4 mt-0.5">
+          <h1 className="text-base font-bold text-ink-1 truncate">{list?.name ?? 'Board'}</h1>
+          <p className="text-[11px] font-medium text-ink-4 mt-0.5">
             {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
-            {statuses.length > 0 && <> · {statuses.length} statuses</>}
-            {activeView && <> · Saved view “{activeView.name}”</>}
+            {statuses.length > 0 && <span className="hidden sm:inline"> · {statuses.length} statuses</span>}
+            {activeView && <span className="hidden sm:inline"> · Saved view “{activeView.name}”</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
           <ViewSwitcher current={currentKind} onChange={handleKindChange} />
+          <div className="h-6 w-px bg-ink-5/20 shrink-0" />
           <SavedViewsMenu
             views={views}
             activeId={activeViewId}
@@ -277,29 +278,37 @@ export function BoardPage() {
               if (confirm('Delete this saved view?')) delView.mutate(id)
             }}
           />
-          <Button variant="secondary" size="sm" onClick={() => setShowSaveView(true)} title="Save current filters as a view">
-            <Save className="w-3.5 h-3.5 mr-1.5" />
-            Save
+          <Button variant="secondary" size="xs" onClick={() => setShowSaveView(true)} title="Save current filters as a view" className="shrink-0">
+            <Save className="w-3 h-3 sm:mr-1.5" />
+            <span className="hidden sm:inline">Save</span>
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setShowStatusMgr(true)}>Statuses</Button>
+          <Button variant="secondary" size="xs" onClick={() => setShowStatusMgr(true)} className="shrink-0">Statuses</Button>
           <Button
             variant={showArchived ? 'primary' : 'secondary'}
-            size="sm"
+            size="xs"
             onClick={() => setShowArchived((v) => !v)}
             title="Toggle archived tasks"
+            className="shrink-0"
           >
-            {showArchived ? 'Showing archived' : 'Show archived'}
+            <span className="hidden sm:inline">{showArchived ? 'Showing archived' : 'Show archived'}</span>
+            <span className="sm:hidden">{showArchived ? 'Archived' : 'Show Arc.'}</span>
           </Button>
-          <Button onClick={() => { setCreateForStatus(undefined); setShowCreate(true) }} size="sm">Add Task</Button>
+          <Button onClick={() => { setCreateForStatus(undefined); setShowCreate(true) }} size="xs" className="shrink-0">
+             <Plus className="w-3 h-3 sm:mr-1.5" />
+             <span className="hidden sm:inline">Add Task</span>
+             <span className="sm:hidden">Add</span>
+          </Button>
         </div>
       </div>
 
-      <FilterBar
-        config={currentConfig}
-        onChange={handleConfigChange}
-        statuses={statuses}
-        tags={workspaceTags}
-      />
+      <div className="overflow-x-auto scrollbar-hide bg-surface/30">
+        <FilterBar
+            config={currentConfig}
+            onChange={handleConfigChange}
+            statuses={statuses}
+            tags={workspaceTags}
+        />
+      </div>
 
       {isLoading ? <PageSpinner /> : <div className="flex-1 overflow-hidden flex flex-col"><ViewRenderer /></div>}
 
@@ -342,7 +351,7 @@ function SavedViewsMenu({
   if (views.length === 0) return null
   return (
     <select
-      className="h-8 px-2 bg-surface border border-ink-5/40 rounded-lg text-xs text-ink-1 focus:outline-none focus:ring-2 focus:ring-brand-400/40 max-w-[160px]"
+      className="h-7 px-2 bg-surface border border-ink-5/40 rounded-lg text-[11px] font-medium text-ink-1 focus:outline-none focus:ring-2 focus:ring-brand-400/40 max-w-[120px] sm:max-w-[160px] shrink-0"
       value={activeId}
       onChange={(e) => {
         const v = e.target.value

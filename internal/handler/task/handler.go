@@ -6,15 +6,21 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/yourorg/clickup/internal/authz"
 	"github.com/yourorg/clickup/internal/domain"
 	"github.com/yourorg/clickup/internal/httpx"
 	"github.com/yourorg/clickup/internal/middleware"
 	tsvc "github.com/yourorg/clickup/internal/service/task"
 )
 
-type Handler struct{ svc *tsvc.Service }
+type Handler struct {
+	svc    *tsvc.Service
+	policy authz.Policy
+}
 
-func New(svc *tsvc.Service) *Handler { return &Handler{svc: svc} }
+func New(svc *tsvc.Service, policy authz.Policy) *Handler {
+	return &Handler{svc: svc, policy: policy}
+}
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/tasks", h.create)
@@ -48,6 +54,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	if err := h.policy.RequireListAccess(r.Context(), in.ListID, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.Create(r.Context(), uid, in)
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -57,12 +69,22 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	f := domain.TaskFilter{}
 	q := r.URL.Query()
 	if v := q.Get("list_id"); v != "" {
 		id, err := uuid.Parse(v)
 		if err != nil {
 			httpx.Err(w, http.StatusBadRequest, "bad list_id")
+			return
+		}
+		if err := h.policy.RequireListAccess(r.Context(), id, uid); err != nil {
+			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
 		f.ListID = &id
@@ -105,11 +127,22 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.Get(r.Context(), id)
 	if err != nil {
 		httpx.Err(w, http.StatusInternalServerError, err.Error())
@@ -133,6 +166,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var in tsvc.UpdateInput
 	if err := httpx.Decode(r, &in); err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -157,6 +196,12 @@ func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var in tsvc.ReorderInput
 	if err := httpx.Decode(r, &in); err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -181,6 +226,12 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	if err := h.svc.Delete(r.Context(), uid, id); err != nil {
 		httpx.Err(w, http.StatusInternalServerError, err.Error())
 		return
@@ -199,6 +250,12 @@ func (h *Handler) createSubtask(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), parentID, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var in tsvc.CreateInput
 	if err := httpx.Decode(r, &in); err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -232,6 +289,12 @@ func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.Archive(r.Context(), uid, id)
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -251,6 +314,12 @@ func (h *Handler) unarchive(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.Unarchive(r.Context(), uid, id)
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -260,11 +329,22 @@ func (h *Handler) unarchive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listSubtasks(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.ListSubtasks(r.Context(), id)
 	if err != nil {
 		httpx.Err(w, http.StatusInternalServerError, err.Error())
@@ -277,11 +357,22 @@ func (h *Handler) listSubtasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listAssignees(w http.ResponseWriter, r *http.Request) {
+	uid, ok := actor(r)
+	if !ok {
+		httpx.Err(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), id, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	res, err := h.svc.ListAssignees(r.Context(), id)
 	if err != nil {
 		httpx.Err(w, http.StatusInternalServerError, err.Error())
@@ -308,6 +399,12 @@ func (h *Handler) addAssignee(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), taskID, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	var in assigneeInput
 	if err := httpx.Decode(r, &in); err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
@@ -331,6 +428,12 @@ func (h *Handler) removeAssignee(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
+
+	if err := h.policy.RequireTaskAccess(r.Context(), taskID, uid); err != nil {
+		httpx.Err(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	userID, err := uuid.Parse(chi.URLParam(r, "userID"))
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, "bad userID")
