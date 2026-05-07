@@ -30,6 +30,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Folder, e
 	return f, nil
 }
 
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (*domain.Folder, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
 func (s *Service) List(ctx context.Context, spaceID uuid.UUID) ([]domain.Folder, error) {
 	return s.repo.ListBySpace(ctx, spaceID)
 }

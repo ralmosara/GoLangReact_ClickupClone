@@ -1,4 +1,4 @@
-import { Component, type ReactNode, useMemo, useState } from 'react'
+import { Component, type ReactNode, useMemo, useState, useEffect } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, Outlet, useMatch, useNavigate, useParams } from 'react-router-dom'
 import * as Popover from '@radix-ui/react-popover'
@@ -21,6 +21,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquare,
   MoreHorizontal,
   Palette,
@@ -32,6 +33,7 @@ import {
   Target,
   Trash2,
   Users,
+  X,
 } from 'lucide-react'
 
 import { api } from '../../lib/api'
@@ -205,20 +207,55 @@ function CreateListModal({
 /* -------------------------------------------------------------------------- */
 
 export function WorkspaceLayout() {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { workspaceId, listId, taskId } = useParams<{ workspaceId: string; listId?: string; taskId?: string }>()
   const [createSpace, setCreateSpace] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Auto-close sidebar on mobile when navigating
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [listId, taskId])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas">
-      <LayoutErrorBoundary>
-        <Sidebar workspaceId={workspaceId ?? ''} onCreateSpace={() => setCreateSpace(true)} />
-      </LayoutErrorBoundary>
+    <div className="flex h-screen overflow-hidden bg-canvas relative">
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-      <main className="flex-1 overflow-y-auto bg-canvas">
+      <div className={cn(
+        "fixed inset-y-0 left-0 z-50 transform lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
         <LayoutErrorBoundary>
-          <Outlet />
+            <Sidebar workspaceId={workspaceId ?? ''} onCreateSpace={() => setCreateSpace(true)} onClose={() => setSidebarOpen(false)} />
         </LayoutErrorBoundary>
-      </main>
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile Header */}
+        <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-surface border-b border-ink-5/20 shrink-0">
+            <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 -ml-2 text-ink-3 hover:text-ink-1"
+            >
+                <Menu className="w-6 h-6" />
+            </button>
+            <div className="flex-1 px-4 text-center">
+                 <span className="text-sm font-bold text-ink-1 truncate block">Clikr</span>
+            </div>
+            <div className="w-10" /> {/* spacer */}
+        </header>
+
+        <main className="flex-1 overflow-y-auto bg-canvas">
+            <LayoutErrorBoundary>
+            <Outlet />
+            </LayoutErrorBoundary>
+        </main>
+      </div>
 
       {createSpace && workspaceId && (
         <CreateSpaceModal workspaceId={workspaceId} onClose={() => setCreateSpace(false)} />
@@ -263,7 +300,7 @@ class LayoutErrorBoundary extends Component<{ children: ReactNode }, { error: Er
 /* Sidebar                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function Sidebar({ workspaceId, onCreateSpace }: { workspaceId: string; onCreateSpace: () => void }) {
+function Sidebar({ workspaceId, onCreateSpace, onClose }: { workspaceId: string; onCreateSpace: () => void; onClose: () => void }) {
   // Go nil slices serialize as JSON null, and destructuring default only fires
   // for `undefined` — so we null-coalesce explicitly to keep .map() safe.
   const spacesQ = useQuery({
@@ -274,7 +311,14 @@ function Sidebar({ workspaceId, onCreateSpace }: { workspaceId: string; onCreate
   const spaces = spacesQ.data ?? []
 
   return (
-    <aside className="relative w-[252px] shrink-0 flex flex-col select-none bg-gradient-to-b from-[#131320] to-[#0B0B13] text-sidebar-text border-r border-white/[0.06]">
+    <aside className="relative w-[280px] lg:w-[252px] h-full shrink-0 flex flex-col select-none bg-gradient-to-b from-[#131320] to-[#0B0B13] text-sidebar-text border-r border-white/[0.06]">
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 p-2 text-white/40 hover:text-white lg:hidden z-50"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
       {/* Ambient accents — purely decorative, soft brand tint top-left */}
       <div className="pointer-events-none absolute -top-24 -left-16 w-64 h-64 bg-brand-500/10 rounded-full blur-3xl" />
       <div className="pointer-events-none absolute top-1/3 -right-20 w-60 h-60 bg-brand-700/8 rounded-full blur-3xl" />
