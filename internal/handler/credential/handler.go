@@ -69,7 +69,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, res)
@@ -101,7 +101,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusNotFound, "not found")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, res)
@@ -165,7 +165,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

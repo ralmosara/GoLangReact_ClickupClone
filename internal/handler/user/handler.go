@@ -64,7 +64,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.svc.Me(r.Context(), uid)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if u == nil {

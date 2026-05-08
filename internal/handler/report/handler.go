@@ -93,7 +93,7 @@ func (h *Handler) accomplishments(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -114,7 +114,7 @@ func (h *Handler) accomplishmentsPDF(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
@@ -135,7 +135,7 @@ func (h *Handler) accomplishmentsXLSX(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

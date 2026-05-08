@@ -41,7 +41,7 @@ func (h *Handler) listByList(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListByList(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -58,7 +58,7 @@ func (h *Handler) listByWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListByWorkspace(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -154,7 +154,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), uid, id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -170,7 +170,7 @@ func (h *Handler) listValues(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListValues(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -219,7 +219,7 @@ func (h *Handler) deleteValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteValue(r.Context(), uid, taskID, fieldID); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

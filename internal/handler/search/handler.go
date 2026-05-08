@@ -31,7 +31,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	res, err := h.svc.Search(r.Context(), wsID, query, limit)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {

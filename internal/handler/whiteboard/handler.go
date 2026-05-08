@@ -32,7 +32,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListByWorkspace(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -74,7 +74,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.Get(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -120,7 +120,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), uid, id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

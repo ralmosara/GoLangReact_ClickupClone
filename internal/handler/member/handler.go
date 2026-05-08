@@ -36,7 +36,7 @@ func (h *Handler) listWS(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListWorkspaceMembers(r.Context(), wsID)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -102,7 +102,7 @@ func (h *Handler) listSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListSpaceMembers(r.Context(), spaceID)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
