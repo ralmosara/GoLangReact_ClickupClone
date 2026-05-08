@@ -54,12 +54,17 @@ export function BoardView({ tasks, statuses, workspaceId, listId, config, taskAs
       return statuses
         .slice()
         .sort((a, b) => a.order_index - b.order_index)
-        .map((s) => ({
+        .map((s, idx) => ({
           key: s.id,
           label: s.name,
           color: s.color,
           isLegacy: false,
-          tasks: visible.filter((t) => t.status_id === s.id).sort((a, b) => a.position - b.position),
+          tasks: visible.filter((t) => {
+            // Match by status_id, OR if it's the first column (likely "To Do"), match tasks with no status_id
+            if (t.status_id === s.id) return true
+            if (!t.status_id && idx === 0) return true
+            return false
+          }).sort((a, b) => a.position - b.position),
         }))
     }
     return LEGACY_STATUSES.map((s) => ({
@@ -97,27 +102,25 @@ export function BoardView({ tasks, statuses, workspaceId, listId, config, taskAs
     }
     if (!targetColumn) return
 
-    if (targetColumn.isLegacy) {
-      if (task.status !== targetColumn.key) {
-        reorder.mutate({
-          taskId,
-          listId,
-          statusId: null, // Clear custom status_id
-          status: targetColumn.key,
-          prev: undefined,
-          next: undefined,
-        })
-      }
-      return
-    }
-
     const targetTasks = targetColumn.tasks.filter((t) => t.id !== taskId)
     const insertAt = overIndex < 0 ? targetTasks.length : overIndex
     const prev = targetTasks[insertAt - 1]?.position
     const next = targetTasks[insertAt]?.position
 
-    const statusChange = targetColumn.key === task.status_id ? undefined : targetColumn.key
-    reorder.mutate({ taskId, listId, statusId: statusChange, prev, next })
+    if (targetColumn.isLegacy) {
+      const statusChange = targetColumn.key === task.status ? undefined : targetColumn.key
+      reorder.mutate({
+        taskId,
+        listId,
+        statusId: null, // Always clear custom status_id when dropping into legacy column
+        status: statusChange,
+        prev,
+        next,
+      })
+    } else {
+      const statusChange = targetColumn.key === task.status_id ? undefined : targetColumn.key
+      reorder.mutate({ taskId, listId, statusId: statusChange, prev, next })
+    }
   }
 
   return (

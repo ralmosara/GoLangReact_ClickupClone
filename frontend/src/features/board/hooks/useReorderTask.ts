@@ -45,7 +45,7 @@ export function useReorderTask() {
             ? {
                 ...t,
                 position: newPos,
-                status_id: statusId === undefined ? t.status_id : (statusId ?? undefined),
+                status_id: statusId === undefined ? t.status_id : (statusId === null ? undefined : statusId),
                 status: status === undefined ? t.status : status,
               }
             : t,
