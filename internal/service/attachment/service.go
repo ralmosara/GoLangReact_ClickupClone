@@ -1,11 +1,15 @@
 package attachment
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +19,28 @@ import (
 	"github.com/yourorg/clickup/internal/storage"
 	"github.com/yourorg/clickup/internal/ws"
 )
+
+// ErrUnsupportedFileType is returned for uploads whose magic bytes or
+// extension match the active-content blocklist (HTML, SVG, scripts, exes).
+var ErrUnsupportedFileType = errors.New("unsupported file type")
+
+const sniffWindow = 512
+
+// bannedExtensions: filenames ending in any of these are rejected outright.
+// Mostly active-content / executable surfaces a browser would happily render
+// or hand to the OS.
+var bannedExtensions = map[string]struct{}{
+	".exe": {}, ".bat": {}, ".cmd": {}, ".com": {}, ".scr": {},
+	".sh": {}, ".ps1": {},
+	".js": {}, ".mjs": {}, ".html": {}, ".htm": {}, ".svg": {}, ".xhtml": {},
+}
+
+// bannedSniffedTypes: covers the case where a benign-looking extension hides
+// HTML/SVG content (e.g. an .png that's actually an HTML payload).
+var bannedSniffedTypes = map[string]struct{}{
+	"text/html":     {},
+	"image/svg+xml": {},
+}
 
 type Service struct {
 	repo  domain.AttachmentRepo
@@ -39,12 +65,35 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (*domain.Attachmen
 	if in.Filename == "" {
 		return nil, errors.New("filename required")
 	}
+
+	// Reject by filename extension before touching the body.
+	ext := strings.ToLower(filepath.Ext(in.Filename))
+	if _, banned := bannedExtensions[ext]; banned {
+		return nil, ErrUnsupportedFileType
+	}
+
+	// Peek the first 512 bytes to sniff the real content type. bufio.Reader
+	// preserves the peeked bytes for the subsequent Read by storage.Put, so
+	// the upload stream is never mutated.
+	br := bufio.NewReaderSize(in.Body, sniffWindow)
+	peek, _ := br.Peek(sniffWindow) // err is fine — file may be shorter than the window
+	sniffed := http.DetectContentType(peek)
+	if i := strings.Index(sniffed, ";"); i >= 0 {
+		sniffed = sniffed[:i]
+	}
+	sniffed = strings.TrimSpace(sniffed)
+	if _, banned := bannedSniffedTypes[sniffed]; banned {
+		return nil, ErrUnsupportedFileType
+	}
+
 	key := fmt.Sprintf("tasks/%s/%s-%s", in.TaskID, uuid.NewString(), in.Filename)
-	meta, err := s.store.Put(ctx, key, in.Body)
+	meta, err := s.store.Put(ctx, key, br)
 	if err != nil {
 		return nil, err
 	}
-	mime := in.MimeType
+	// Trust the sniffed type, not the client-supplied header — that's the
+	// whole point of sniffing.
+	mime := sniffed
 	if mime == "" {
 		mime = "application/octet-stream"
 	}

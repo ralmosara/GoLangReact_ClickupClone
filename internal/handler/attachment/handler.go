@@ -1,6 +1,7 @@
 package attachment
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -14,11 +15,19 @@ import (
 	asvc "github.com/yourorg/clickup/internal/service/attachment"
 )
 
-const maxUpload = 32 << 20 // 32 MiB per file
+const defaultMaxUpload = 25 << 20 // 25 MiB per file when not configured
 
-type Handler struct{ svc *asvc.Service }
+type Handler struct {
+	svc      *asvc.Service
+	maxBytes int64
+}
 
-func New(svc *asvc.Service) *Handler { return &Handler{svc: svc} }
+func New(svc *asvc.Service, maxBytes int64) *Handler {
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxUpload
+	}
+	return &Handler{svc: svc, maxBytes: maxBytes}
+}
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/tasks/{taskID}/attachments", h.upload)
@@ -39,8 +48,8 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUpload)
-	if err := r.ParseMultipartForm(maxUpload); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
+	if err := r.ParseMultipartForm(h.maxBytes); err != nil {
 		httpx.Err(w, http.StatusRequestEntityTooLarge, "file too large")
 		return
 	}
@@ -60,7 +69,11 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		Body:     file,
 	})
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		if errors.Is(err, asvc.ErrUnsupportedFileType) {
+			httpx.Err(w, http.StatusBadRequest, "unsupported file type")
+			return
+		}
+		httpx.Err(w, http.StatusInternalServerError, "upload failed")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, att)
@@ -74,7 +87,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListByTask(r.Context(), taskID)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -96,14 +109,13 @@ func (h *Handler) download(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rc.Close()
 	w.Header().Set("Content-Type", att.MimeType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if att.SizeBytes > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(att.SizeBytes, 10))
 	}
-	disposition := "inline"
-	if r.URL.Query().Get("download") == "1" {
-		disposition = "attachment"
-	}
-	w.Header().Set("Content-Disposition", disposition+"; filename="+strconv.Quote(att.Filename))
+	// Force a download disposition. Inline rendering of user-uploaded content
+	// is the stored-XSS surface we just closed via sniffing — keep it closed.
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(att.Filename))
 	_, _ = io.Copy(w, rc)
 }
 
@@ -119,7 +131,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), uid, id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

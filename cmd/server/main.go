@@ -140,6 +140,7 @@ func main() {
 		logLevel = slog.LevelDebug
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
+	slog.SetDefault(logger)
 
 	if cfg.DBDSN == "" {
 		logger.Error("DB_DSN is required (see .env.example)")
@@ -236,7 +237,7 @@ func main() {
 	// cross-cutting infra
 	dispatcher := notify.New(nRepo, hub, logger)
 	recorder := audit.New(auRepo, logger)
-	policy := authz.New(pool)
+	policy := authz.New(pool) // policy layer enforced by handlers (audit, automation, etc.)
 
 	// services
 	uSvc := userSvc.New(uRepo, cfg.JWTSecret)
@@ -270,7 +271,19 @@ func main() {
 	cfSvc := customfieldSvc.New(cfRepo, cvRepo, recorder)
 	teSvc := timeentrySvc.New(teRepo, recorder)
 	depSvc := dependencySvc.New(depRepo, tRepo, hub, recorder)
-	autoSvcImpl := automationSvc.New(autoRepo, recorder)
+	autoSvcImpl := automationSvc.New(autoRepo, recorder).WithListLookup(
+		// Resolve a listID to the workspace that owns it so the automation
+		// handler can reject cross-workspace scope assignments without each
+		// service growing a pool dependency.
+		func(ctx context.Context, listID uuid.UUID) (uuid.UUID, error) {
+			var wsID uuid.UUID
+			err := pool.QueryRow(ctx,
+				`SELECT s.workspace_id FROM lists l JOIN spaces s ON s.id = l.space_id WHERE l.id = $1`,
+				listID,
+			).Scan(&wsID)
+			return wsID, err
+		},
+	)
 	dSvc := docSvc.New(dRepo, hub, recorder)
 	chSvc := chatSvc.New(chatSvc.Deps{
 		Channels: chRepo,
@@ -379,7 +392,7 @@ func main() {
 	credH := credentialHandler.New(credSvc)
 	stH := statusHandler.New(stSvc)
 	tgH := tagHandler.New(tgSvc)
-	atH := attachmentHandler.New(atSvc)
+	atH := attachmentHandler.New(atSvc, cfg.AttachmentMaxBytes)
 	nH := notificationHandler.New(nSvc)
 	auH := auditHandler.New(auSvc)
 	mH := memberHandler.New(mSvc)
@@ -387,7 +400,7 @@ func main() {
 	cfH := customfieldHandler.New(cfSvc)
 	teH := timeentryHandler.New(teSvc)
 	depH := dependencyHandler.New(depSvc)
-	autoH := automationHandler.New(autoSvcImpl)
+	autoH := automationHandler.New(autoSvcImpl, policy)
 	dH := docHandler.New(dSvc)
 	chH := chatHandler.New(chSvc)
 	sH := searchHandler.New(sSvc)
@@ -456,6 +469,7 @@ func main() {
 		})
 
 		r.Group(func(pub chi.Router) {
+			pub.Use(middleware.RateLimit(rdbClient, 10, time.Minute))
 			uH.PublicRoutes(pub)
 			fmH.PublicRoutes(pub)
 		})

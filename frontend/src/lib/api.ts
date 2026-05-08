@@ -15,6 +15,9 @@ export const api = ky.extend({
       async (_req, _opts, res) => {
         if (res.status === 401) {
           useAuthStore.getState().clear()
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
         }
       },
     ],
