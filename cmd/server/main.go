@@ -412,6 +412,49 @@ func main() {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// API root – returns version info and available endpoint groups.
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":    "ClickUp Clone API",
+				"version": "v1",
+				"status":  "ok",
+				"endpoints": []string{
+					"/api/v1/auth/register",
+					"/api/v1/auth/login",
+					"/api/v1/me",
+					"/api/v1/workspaces",
+					"/api/v1/spaces",
+					"/api/v1/folders",
+					"/api/v1/lists",
+					"/api/v1/tasks",
+					"/api/v1/comments",
+					"/api/v1/statuses",
+					"/api/v1/tags",
+					"/api/v1/attachments",
+					"/api/v1/notifications",
+					"/api/v1/audit",
+					"/api/v1/members",
+					"/api/v1/views",
+					"/api/v1/custom-fields",
+					"/api/v1/time-entries",
+					"/api/v1/dependencies",
+					"/api/v1/automations",
+					"/api/v1/docs",
+					"/api/v1/chat",
+					"/api/v1/search",
+					"/api/v1/goals",
+					"/api/v1/sprints",
+					"/api/v1/dashboards",
+					"/api/v1/whiteboards",
+					"/api/v1/forms",
+					"/api/v1/templates",
+					"/api/v1/reports",
+					"/api/v1/credentials",
+				},
+			})
+		})
+
 		r.Group(func(pub chi.Router) {
 			uH.PublicRoutes(pub)
 			fmH.PublicRoutes(pub)

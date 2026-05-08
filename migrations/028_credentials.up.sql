@@ -1,4 +1,4 @@
-CREATE TABLE credentials (
+CREATE TABLE IF NOT EXISTS credentials (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id        UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -11,4 +11,4 @@ CREATE TABLE credentials (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_credentials_workspace_user ON credentials(workspace_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_credentials_workspace_user ON credentials(workspace_id, user_id);
