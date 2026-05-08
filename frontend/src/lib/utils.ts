@@ -53,7 +53,7 @@ export const STATUS_DOT: Record<string, string> = {
 }
 
 export const STATUS_LABEL: Record<string, string> = {
-  open:        'Open',
+  open:        'To Do',
   in_progress: 'In Progress',
   review:      'In Review',
   completed:   'Completed',

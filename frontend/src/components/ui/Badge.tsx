@@ -25,7 +25,7 @@ export function Badge({ children, className, dot, dotColor }: BadgeProps) {
 }
 
 const STATUS_MAP: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  open:        { bg: 'bg-[#F0F4FF]', text: 'text-[#4F63C8]', dot: '#6375E8', label: 'Open' },
+  open:        { bg: 'bg-[#F0F4FF]', text: 'text-[#4F63C8]', dot: '#6375E8', label: 'To Do' },
   in_progress: { bg: 'bg-[#FFF7ED]', text: 'text-[#C05621]', dot: '#F97316', label: 'In Progress' },
   review:      { bg: 'bg-[#FEFCE8]', text: 'text-[#A16207]', dot: '#EAB308', label: 'In Review' },
   completed:   { bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', dot: '#22C55E', label: 'Completed' },
