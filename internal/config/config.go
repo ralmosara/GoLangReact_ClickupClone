@@ -17,6 +17,7 @@ type Config struct {
 	MigrationsDir            string
 	AutoMigrate              bool
 	CredentialsEncryptionKey string // hex-encoded 32-byte AES-256 key
+	AttachmentMaxBytes       int64  // upload size cap (bytes); 0 = use default
 }
 
 func Load() *Config {
@@ -31,6 +32,7 @@ func Load() *Config {
 		MigrationsDir:            getenv("MIGRATIONS_DIR", "./migrations"),
 		AutoMigrate:              getbool("AUTO_MIGRATE", true),
 		CredentialsEncryptionKey: getenv("CREDENTIALS_ENCRYPTION_KEY", ""),
+		AttachmentMaxBytes:       getint64("ATTACHMENT_MAX_BYTES", 25<<20),
 	}
 }
 
@@ -51,4 +53,16 @@ func getbool(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+func getint64(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
 }

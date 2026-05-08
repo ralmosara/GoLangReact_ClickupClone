@@ -75,7 +75,7 @@ func (h *Handler) listByWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.svc.List(r.Context(), wid)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, res)
@@ -100,7 +100,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.svc.Get(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -138,7 +138,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	sp.ID = id
 	if err := h.svc.Update(r.Context(), sp); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, sp)
@@ -162,7 +162,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

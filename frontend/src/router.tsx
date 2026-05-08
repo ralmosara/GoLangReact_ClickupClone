@@ -1,4 +1,7 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api } from './lib/api'
+import type { Workspace } from './types'
 import { LoginPage } from './features/auth/LoginPage'
 import { WorkspacesPage } from './features/workspace/index'
 import { WorkspaceLayout } from './features/workspace/route'
@@ -26,6 +29,24 @@ import { useAuthStore } from './store/auth'
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
   if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function RequireWorkspaceMember({ children }: { children: React.ReactNode }) {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => api.get('workspaces').json<Workspace[] | null>(),
+  })
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-canvas" aria-hidden="true" />
+  }
+  if (isError) return <Navigate to="/workspaces" replace />
+
+  const workspaces = data ?? []
+  const isMember = workspaces.some((w) => w.id === workspaceId)
+  if (!isMember) return <Navigate to="/workspaces" replace />
   return <>{children}</>
 }
 
@@ -65,7 +86,9 @@ export function AppRouter() {
         path="/workspaces/:workspaceId"
         element={
           <RequireAuth>
-            <WorkspaceLayout />
+            <RequireWorkspaceMember>
+              <WorkspaceLayout />
+            </RequireWorkspaceMember>
           </RequireAuth>
         }
       >

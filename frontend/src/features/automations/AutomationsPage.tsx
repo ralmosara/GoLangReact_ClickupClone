@@ -2,11 +2,33 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { Plus, Zap, Trash2, Power } from 'lucide-react'
+import { HTTPError } from 'ky'
 
 import { api } from '../../lib/api'
 import { queryClient } from '../../lib/queryClient'
 import { Button, Input, Modal, PageSpinner } from '../../components/ui'
 import { cn, formatRelative, PRIORITY_LABELS } from '../../lib/utils'
+
+// extractErrorMessage turns ky errors into something a user can act on.
+// ky's HTTPError stringifies as "Request failed with status code 400" by
+// default, swallowing the JSON body — we need the server's actual message.
+async function extractErrorMessage(err: unknown): Promise<string> {
+  if (err instanceof HTTPError) {
+    try {
+      const body = await err.response.clone().json() as { error?: string }
+      if (body?.error) return body.error
+    } catch {
+      // not JSON — fall through to text
+    }
+    try {
+      const text = await err.response.clone().text()
+      if (text) return text.slice(0, 240)
+    } catch { /* swallow */ }
+    return `${err.response.status} ${err.response.statusText}`
+  }
+  if (err instanceof Error) return err.message
+  return String(err)
+}
 import type {
   Automation, AutomationAction, AutomationActionType, AutomationCondition, AutomationTrigger, AutomationTriggerType,
   Member, Space, Status, List as TaskList, Tag,
@@ -32,22 +54,26 @@ export function AutomationsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [showEditor, setShowEditor] = useState<Automation | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
 
-  const { data: automations = [], isLoading } = useQuery({
+  const { data: automations = [], isLoading, error: listError } = useQuery({
     queryKey: ['automations', workspaceId],
     queryFn: () => api.get(`workspaces/${workspaceId}/automations`).json<Automation[]>(),
     enabled: !!workspaceId,
+    retry: false,
   })
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.patch(`automations/${id}`, { json: { enabled } }).json<Automation>(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automations', workspaceId] }),
+    onError: async (err) => setPageError(await extractErrorMessage(err)),
   })
 
   const del = useMutation({
     mutationFn: (id: string) => api.delete(`automations/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automations', workspaceId] }),
+    onError: async (err) => setPageError(await extractErrorMessage(err)),
   })
 
   return (
@@ -59,7 +85,7 @@ export function AutomationsPage() {
             Automations
           </h1>
           <p className="text-sm text-ink-4 mt-0.5">
-            Rules that run on task events. Fire instantly — no outbox retry yet (M8).
+            Rules that run on task events. Due-date triggers are scanned every minute.
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)} size="sm">
@@ -67,6 +93,21 @@ export function AutomationsPage() {
           New automation
         </Button>
       </div>
+
+      {pageError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+          <p className="text-red-600 text-xs font-medium">{pageError}</p>
+          <button onClick={() => setPageError(null)} className="text-red-500 hover:text-red-700 text-xs">dismiss</button>
+        </div>
+      )}
+
+      {listError && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p className="text-amber-700 text-xs font-medium">
+            Couldn't load automations. Are you a member of this workspace?
+          </p>
+        </div>
+      )}
 
       {isLoading && <PageSpinner />}
 
@@ -161,6 +202,7 @@ function AutomationEditor({
   const [actions, setActions] = useState<AutomationAction[]>(
     automation?.actions && automation.actions.length > 0 ? automation.actions : [{ type: 'notify' }],
   )
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   // Ref data for dropdowns.
   const { data: spaces = [] } = useQuery({
@@ -189,16 +231,45 @@ function AutomationEditor({
     queryFn: () => api.get(`workspaces/${workspaceId}/tags`).json<Tag[]>(),
   })
 
+  // Light client-side validation. Mirrors what the backend rejects so users
+  // see the failure inline before round-tripping.
+  function validate(): string | null {
+    if (!name.trim()) return 'Name is required.'
+    if (trigger.type === 'task.status_changed' && trigger.to_status_id && !listId) {
+      return 'Pick a list scope when targeting a specific status.'
+    }
+    if (actions.length === 0) return 'Add at least one action.'
+    for (const a of actions) {
+      if (a.type === 'change_status' && !a.status_id) return 'Each "change status" action needs a target status.'
+      if (a.type === 'assign_user'  && !a.user_id)   return 'Each "assign user" action needs a member.'
+      if (a.type === 'add_tag'      && !a.tag_id)    return 'Each "add tag" action needs a tag.'
+      if (a.type === 'add_comment'  && !a.body?.trim()) return 'Each comment action needs a body.'
+      if (a.type === 'notify'       && !a.user_id)   return 'Each "notify" action needs a recipient.'
+    }
+    return null
+  }
+
   const save = useMutation({
-    mutationFn: () => {
-      const body = {
+    mutationFn: async () => {
+      const v = validate()
+      if (v) throw new Error(v)
+      // On edit, distinguish "no scope change" from "switch to workspace-wide".
+      // The backend treats list_id==undefined as untouched, so we send an
+      // explicit clear_list_id when the user chose "Entire workspace" on a
+      // previously list-scoped automation.
+      const wasListScoped = !!automation?.list_id
+      const body: Record<string, unknown> = {
         name: name.trim(),
         description,
-        list_id: listId ?? undefined,
         trigger,
         conditions,
         actions,
         enabled: automation?.enabled ?? true,
+      }
+      if (listId) {
+        body.list_id = listId
+      } else if (isEdit && wasListScoped) {
+        body.clear_list_id = true
       }
       if (isEdit) {
         return api.patch(`automations/${automation!.id}`, { json: body }).json<Automation>()
@@ -209,6 +280,10 @@ function AutomationEditor({
       queryClient.invalidateQueries({ queryKey: ['automations', workspaceId] })
       onClose()
     },
+    onError: async (err) => {
+      setErrorMsg(await extractErrorMessage(err))
+    },
+    onMutate: () => setErrorMsg(null),
   })
 
   return (
@@ -274,6 +349,23 @@ function AutomationEditor({
               {members.map((m) => <option key={m.user_id} value={m.user_id}>to: {m.name || m.email}</option>)}
             </select>
           )}
+          {trigger.type === 'task.due_soon' && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-ink-3">
+              <span>Fire when due within</span>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={trigger.lead_days ?? 1}
+                onChange={(e) =>
+                  setTrigger({ ...trigger, lead_days: Math.max(1, Number(e.target.value || 1)) })
+                }
+                className="w-16 h-8 bg-surface border border-ink-5/40 rounded-lg px-2 text-sm"
+              />
+              <span>day(s).</span>
+              <span className="text-ink-5 ml-auto italic">(scanned every minute)</span>
+            </div>
+          )}
         </Section>
 
         {/* Conditions */}
@@ -317,7 +409,11 @@ function AutomationEditor({
           ))}
         </Section>
 
-        {save.error && <p className="text-red-500 text-xs">{String(save.error)}</p>}
+        {errorMsg && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <p className="text-red-600 text-xs font-medium">{errorMsg}</p>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-2 pt-4 border-t border-ink-5/20 mt-3">

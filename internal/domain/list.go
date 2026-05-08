@@ -24,5 +24,6 @@ type ListRepo interface {
 	ListBySpace(ctx context.Context, spaceID uuid.UUID) ([]List, error)
 	ListByFolder(ctx context.Context, folderID uuid.UUID) ([]List, error)
 	Update(ctx context.Context, l *List) error
+	SetArchived(ctx context.Context, id uuid.UUID, archived bool) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }

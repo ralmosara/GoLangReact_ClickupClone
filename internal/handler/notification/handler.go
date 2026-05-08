@@ -34,7 +34,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	res, err := h.svc.ListForUser(r.Context(), uid, unread, limit)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -51,7 +51,7 @@ func (h *Handler) unread(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.svc.CountUnread(r.Context(), uid)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{"count": c})
@@ -64,7 +64,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.MarkRead(r.Context(), id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -77,7 +77,7 @@ func (h *Handler) readAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.MarkAllRead(r.Context(), uid); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

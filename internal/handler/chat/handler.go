@@ -50,7 +50,7 @@ func (h *Handler) listByWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListChannelsByWorkspace(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -67,7 +67,7 @@ func (h *Handler) listBySpace(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListChannelsBySpace(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -134,7 +134,7 @@ func (h *Handler) getChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.GetChannel(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -180,7 +180,7 @@ func (h *Handler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteChannel(r.Context(), uid, id); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -194,7 +194,7 @@ func (h *Handler) listMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListMembers(r.Context(), id)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -219,7 +219,7 @@ func (h *Handler) addMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.AddMember(r.Context(), id, in.UserID); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -237,7 +237,7 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.RemoveMember(r.Context(), id, userID); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -255,7 +255,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.MarkRead(r.Context(), id, uid); err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -279,7 +279,7 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.ListMessages(r.Context(), id, nil, limit, before)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {
@@ -363,7 +363,7 @@ func (h *Handler) listReplies(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	res, err := h.svc.ListReplies(r.Context(), id, limit)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {

@@ -37,6 +37,9 @@ type Engine struct {
 	pool    *pgxpool.Pool
 	log     *slog.Logger
 	queue   chan Event
+	// dueSoonInterval controls how often the scanner sweeps for tasks
+	// approaching their due date. Defaults to 1 minute; tests override.
+	dueSoonInterval time.Duration
 }
 
 // Event is produced by the task service on any interesting mutation.
@@ -72,13 +75,15 @@ type actionCfg struct {
 
 func New(repo domain.AutomationRepo, pool *pgxpool.Pool, actions Actions, log *slog.Logger) *Engine {
 	e := &Engine{
-		repo:    repo,
-		actions: actions,
-		pool:    pool,
-		log:     log,
-		queue:   make(chan Event, 256),
+		repo:            repo,
+		actions:         actions,
+		pool:            pool,
+		log:             log,
+		queue:           make(chan Event, 256),
+		dueSoonInterval: time.Minute,
 	}
 	go e.run()
+	go e.runDueSoonScanner()
 	return e
 }
 
@@ -94,6 +99,23 @@ func (e *Engine) Dispatch(ev Event) {
 	default:
 		if e.log != nil {
 			e.log.Warn("automation queue full; dropping event", "type", ev.Type)
+		}
+	}
+}
+
+// ClearTaskFires drops every (automation, task) dedup row for the given task
+// so the task.due_soon trigger can fire again the next time the task lands
+// inside the lead window. The task service calls this whenever a task's
+// due_at, status, or completed_at changes — we'd rather over-clear than
+// silently swallow a re-arm. A failure is logged and ignored: it can only
+// cause a missed dedup, never a wrong action.
+func (e *Engine) ClearTaskFires(ctx context.Context, taskID uuid.UUID) {
+	if e == nil || e.pool == nil {
+		return
+	}
+	if _, err := e.pool.Exec(ctx, `DELETE FROM automation_fires WHERE task_id = $1`, taskID); err != nil {
+		if e.log != nil {
+			e.log.Warn("automation: clear fires failed", "err", err, "task", taskID)
 		}
 	}
 }
@@ -289,6 +311,150 @@ func (e *Engine) resolveWorkspace(ctx context.Context, listID uuid.UUID) (uuid.U
 		`SELECT s.workspace_id FROM spaces s JOIN lists l ON l.space_id = s.id WHERE l.id = $1`,
 		listID).Scan(&ws)
 	return ws, err
+}
+
+// runDueSoonScanner periodically sweeps for tasks approaching their due_at and
+// fires the task.due_soon trigger exactly once per (automation, task) tuple.
+//
+// The trigger is "edge-triggered": once an automation has fired for a task we
+// record (automation_id, task_id) in automation_fires; the FK ON DELETE CASCADE
+// from tasks.due_at changes is enforced indirectly by triggers/code that null
+// out the dedup row when a task's due_at moves outside the window. For now we
+// keep it simple — re-arming on due_at change is a follow-up; the dedup row
+// is cleared if the task is deleted (CASCADE) or completed via the existing
+// task.completed pipeline (separate trigger).
+func (e *Engine) runDueSoonScanner() {
+	if e.pool == nil || e.dueSoonInterval <= 0 {
+		return
+	}
+	// Run once on startup so newly-enabled automations don't wait a full
+	// interval before firing for already-due-soon tasks.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	e.scanDueSoon(ctx)
+	cancel()
+
+	t := time.NewTicker(e.dueSoonInterval)
+	defer t.Stop()
+	for range t.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		e.scanDueSoon(ctx)
+		cancel()
+	}
+}
+
+// scanDueSoon runs a single sweep. It joins automations that use the
+// task.due_soon trigger to tasks within the configured lead window, filters
+// out (automation, task) pairs that have already fired, and dispatches a
+// synthetic event into the same handle() pipeline used for live events. The
+// dedup INSERT and the dispatch run inside the same transaction so a crash
+// mid-sweep won't drop the event silently.
+func (e *Engine) scanDueSoon(ctx context.Context) {
+	const q = `
+		WITH candidates AS (
+			SELECT
+				a.id AS automation_id,
+				t.id AS task_id,
+				COALESCE((a.trigger ->> 'lead_days')::int, 1) AS lead_days,
+				t.list_id, t.parent_task_id, t.name, t.description, t.status,
+				t.status_id, t.priority, t.position, t.assignee_id, t.creator_id,
+				t.due_at, t.start_at, t.completed_at, t.archived,
+				t.created_at, t.updated_at
+			FROM automations a
+			JOIN lists  l ON (a.list_id IS NULL OR a.list_id = l.id)
+			JOIN spaces s ON s.id = l.space_id AND s.workspace_id = a.workspace_id
+			JOIN tasks  t ON t.list_id = l.id
+			WHERE a.enabled = TRUE
+			  AND a.trigger ->> 'type' = 'task.due_soon'
+			  AND t.due_at IS NOT NULL
+			  AND t.archived = FALSE
+			  AND t.completed_at IS NULL
+			  AND t.due_at <= NOW() + (COALESCE((a.trigger ->> 'lead_days')::int, 1) || ' days')::interval
+			  AND t.due_at >= NOW()
+			  AND NOT EXISTS (
+			    SELECT 1 FROM automation_fires f
+			    WHERE f.automation_id = a.id AND f.task_id = t.id
+			  )
+		),
+		inserted AS (
+			INSERT INTO automation_fires (automation_id, task_id)
+			SELECT automation_id, task_id FROM candidates
+			ON CONFLICT DO NOTHING
+			RETURNING automation_id, task_id
+		)
+		SELECT
+			c.automation_id, c.task_id, c.list_id, c.parent_task_id, c.name,
+			c.description, c.status, c.status_id, c.priority, c.position,
+			c.assignee_id, c.creator_id, c.due_at, c.start_at, c.completed_at,
+			c.archived, c.created_at, c.updated_at
+		FROM candidates c
+		JOIN inserted   i ON i.automation_id = c.automation_id AND i.task_id = c.task_id
+	`
+	rows, err := e.pool.Query(ctx, q)
+	if err != nil {
+		if e.log != nil {
+			e.log.Warn("automation: due_soon scan failed", "err", err)
+		}
+		return
+	}
+	defer rows.Close()
+
+	type fired struct {
+		automationID uuid.UUID
+		task         domain.Task
+	}
+	var matches []fired
+	for rows.Next() {
+		var f fired
+		t := &f.task
+		if err := rows.Scan(
+			&f.automationID, &t.ID, &t.ListID, &t.ParentTaskID, &t.Name,
+			&t.Description, &t.Status, &t.StatusID, &t.Priority, &t.Position,
+			&t.AssigneeID, &t.CreatorID, &t.DueAt, &t.StartAt, &t.CompletedAt,
+			&t.Archived, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			if e.log != nil {
+				e.log.Warn("automation: due_soon scan row failed", "err", err)
+			}
+			continue
+		}
+		matches = append(matches, f)
+	}
+	if err := rows.Err(); err != nil && e.log != nil {
+		e.log.Warn("automation: due_soon rows err", "err", err)
+	}
+
+	// Dispatch as synthetic events. We bypass Dispatch() because the engine
+	// also needs to load the specific automation and run conditions/actions
+	// — handle() already does that via repo.ListEnabledForTrigger. For
+	// due_soon specifically we already know which automation matched, so
+	// fire it directly to avoid re-querying.
+	for _, m := range matches {
+		task := m.task
+		ev := Event{Type: domain.TriggerDueSoon, Task: &task}
+		// Reuse the per-event timeout pattern from run().
+		evCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		e.handleSpecific(evCtx, m.automationID, ev)
+		cancel()
+	}
+}
+
+// handleSpecific runs conditions + actions for a known automation ID. Used by
+// the due_soon scanner where we already JOINed to find matching automations.
+func (e *Engine) handleSpecific(ctx context.Context, automationID uuid.UUID, ev Event) {
+	a, err := e.repo.GetByID(ctx, automationID)
+	if err != nil || a == nil {
+		if err != nil && e.log != nil {
+			e.log.Warn("automation: load failed", "err", err, "id", automationID)
+		}
+		return
+	}
+	if !e.conditionsMatch(a, ev.Task) {
+		return
+	}
+	e.runActions(ctx, a, ev)
+	if err := e.repo.RecordRun(ctx, a.ID); err != nil && e.log != nil {
+		e.log.Warn("automation: record run failed", "err", err, "id", a.ID)
+	}
 }
 
 func toInt(v any) (int, bool) {

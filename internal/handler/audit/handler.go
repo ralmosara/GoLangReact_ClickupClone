@@ -37,7 +37,7 @@ func (h *Handler) listByWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.svc.List(r.Context(), f)
 	if err != nil {
-		httpx.Err(w, http.StatusInternalServerError, err.Error())
+		httpx.Fail(w, r, http.StatusInternalServerError, "internal error", err)
 		return
 	}
 	if res == nil {

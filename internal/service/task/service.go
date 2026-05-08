@@ -282,7 +282,27 @@ func (s *Service) Update(ctx context.Context, actor uuid.UUID, id uuid.UUID, in 
 		s.dispatchAutomation(automation.Event{Type: domain.TriggerCompleted, Task: t, Before: &before, ActorID: actor})
 		s.maybeSpawnRecurring(ctx, t, actor)
 	}
+
+	// Re-arm the task.due_soon dedup table when the task's due window or
+	// completion state changes — otherwise a rescheduled task would never
+	// trigger again. Cheap (single DELETE by task_id), safe to over-call.
+	if s.engine != nil {
+		dueChanged := !timesEqual(before.DueAt, t.DueAt)
+		completionChanged := (before.CompletedAt == nil) != (t.CompletedAt == nil)
+		if dueChanged || completionChanged {
+			s.engine.ClearTaskFires(ctx, t.ID)
+		}
+	}
 	return t, nil
+}
+
+// timesEqual returns true if both times point to the same instant (or both
+// are nil). Used to detect due_at changes for automation re-arming.
+func timesEqual(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 func (s *Service) Reorder(ctx context.Context, actor, id uuid.UUID, in ReorderInput) (*domain.Task, error) {

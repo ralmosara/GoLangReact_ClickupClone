@@ -12,13 +12,54 @@ import (
 	"github.com/yourorg/clickup/internal/domain"
 )
 
+// ListLookup resolves a list to its owning workspace. The handler uses it to
+// validate scope changes (creating/moving an automation onto a list that
+// belongs to a different workspace must be rejected). Wired in main.go via a
+// pool-backed callback so this package stays free of *pgxpool.
+type ListLookup func(ctx context.Context, listID uuid.UUID) (uuid.UUID, error)
+
 type Service struct {
-	repo  domain.AutomationRepo
-	audit *audit.Recorder
+	repo     domain.AutomationRepo
+	audit    *audit.Recorder
+	listOf   ListLookup // optional; nil disables cross-workspace list checks
 }
 
 func New(repo domain.AutomationRepo, rec *audit.Recorder) *Service {
 	return &Service{repo: repo, audit: rec}
+}
+
+// WithListLookup attaches the list→workspace resolver. Returns the service for
+// chaining at construction time.
+func (s *Service) WithListLookup(fn ListLookup) *Service {
+	s.listOf = fn
+	return s
+}
+
+// WorkspaceForList resolves which workspace owns the given list. Returns
+// uuid.Nil and an error if the lookup is unavailable or the list does not
+// exist.
+func (s *Service) WorkspaceForList(ctx context.Context, listID uuid.UUID) (uuid.UUID, error) {
+	if s.listOf == nil {
+		return uuid.Nil, errors.New("list lookup not configured")
+	}
+	return s.listOf(ctx, listID)
+}
+
+// VerifyListInWorkspace ensures the list belongs to the given workspace.
+// Returns nil on match, an error otherwise. When the lookup is not configured
+// the check is skipped (caller policy is expected to compensate).
+func (s *Service) VerifyListInWorkspace(ctx context.Context, listID, wsID uuid.UUID) error {
+	if s.listOf == nil {
+		return nil
+	}
+	got, err := s.listOf(ctx, listID)
+	if err != nil {
+		return err
+	}
+	if got != wsID {
+		return errors.New("list does not belong to workspace")
+	}
+	return nil
 }
 
 type CreateInput struct {
@@ -40,6 +81,11 @@ type UpdateInput struct {
 	Actions     json.RawMessage `json:"actions,omitempty"`
 	Enabled     *bool           `json:"enabled,omitempty"`
 	ListID      *uuid.UUID      `json:"list_id,omitempty"`
+	// ClearListID lets a caller explicitly null out list_id (i.e., switch the
+	// automation from list-scoped to workspace-wide). Using a separate flag
+	// avoids the JSON "field missing vs. field=null" ambiguity that would
+	// otherwise force callers into json.RawMessage gymnastics.
+	ClearListID bool `json:"clear_list_id,omitempty"`
 }
 
 func (s *Service) Create(ctx context.Context, actor uuid.UUID, in CreateInput) (*domain.Automation, error) {
@@ -125,7 +171,9 @@ func (s *Service) Update(ctx context.Context, actor, id uuid.UUID, in UpdateInpu
 	if in.Enabled != nil {
 		a.Enabled = *in.Enabled
 	}
-	if in.ListID != nil {
+	if in.ClearListID {
+		a.ListID = nil
+	} else if in.ListID != nil {
 		a.ListID = in.ListID
 	}
 	if err := s.repo.Update(ctx, a); err != nil {

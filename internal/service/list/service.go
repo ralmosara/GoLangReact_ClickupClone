@@ -47,6 +47,42 @@ func (s *Service) Update(ctx context.Context, l *domain.List) error {
 	return s.repo.Update(ctx, l)
 }
 
+func (s *Service) Archive(ctx context.Context, id uuid.UUID) (*domain.List, error) {
+	l, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if l == nil {
+		return nil, errors.New("not found")
+	}
+	if l.Archived {
+		return l, nil
+	}
+	if err := s.repo.SetArchived(ctx, id, true); err != nil {
+		return nil, err
+	}
+	l.Archived = true
+	return l, nil
+}
+
+func (s *Service) Unarchive(ctx context.Context, id uuid.UUID) (*domain.List, error) {
+	l, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if l == nil {
+		return nil, errors.New("not found")
+	}
+	if !l.Archived {
+		return l, nil
+	}
+	if err := s.repo.SetArchived(ctx, id, false); err != nil {
+		return nil, err
+	}
+	l.Archived = false
+	return l, nil
+}
+
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }

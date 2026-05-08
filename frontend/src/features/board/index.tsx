@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Save, Plus } from 'lucide-react'
+import * as Popover from '@radix-ui/react-popover'
+import { Archive, ArchiveRestore, MoreHorizontal, Plus, Save } from 'lucide-react'
 
 import { api } from '../../lib/api'
 import { queryClient } from '../../lib/queryClient'
@@ -117,6 +118,59 @@ function SaveViewModal({
   )
 }
 
+function ListActionsMenu({
+  archived,
+  disabled,
+  onArchive,
+  onUnarchive,
+}: {
+  archived: boolean
+  disabled?: boolean
+  onArchive: () => void
+  onUnarchive: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          className="h-8 w-8 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-ink-1/[0.04] hover:text-ink-1 transition-colors disabled:opacity-50"
+          title="List options"
+          aria-label="List options"
+          disabled={disabled}
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          className="w-[200px] bg-surface border border-ink-5/30 rounded-xl shadow-modal p-1.5 z-50 animate-fade-in"
+        >
+          {archived ? (
+            <button
+              onClick={() => { setOpen(false); onUnarchive() }}
+              className="flex items-center gap-2.5 w-full px-2 py-1.5 text-[12.5px] text-left rounded-lg text-ink-2 hover:bg-ink-1/[0.04] transition-colors"
+            >
+              <ArchiveRestore className="w-4 h-4 text-ink-3" />
+              Unarchive list
+            </button>
+          ) : (
+            <button
+              onClick={() => { setOpen(false); onArchive() }}
+              className="flex items-center gap-2.5 w-full px-2 py-1.5 text-[12.5px] text-left rounded-lg text-ink-2 hover:bg-ink-1/[0.04] transition-colors"
+            >
+              <Archive className="w-4 h-4 text-ink-3" />
+              Archive list
+            </button>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
 export function BoardPage() {
   const { listId, workspaceId } = useParams<{ listId: string; workspaceId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -204,6 +258,18 @@ export function BoardPage() {
   const updateView = useUpdateView(listId)
   const delView = useDeleteView(listId)
 
+  const archiveList = useMutation({
+    mutationFn: (archived: boolean) =>
+      api.post(`lists/${listId}/${archived ? 'archive' : 'unarchive'}`).json<List>(),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['list', listId], updated)
+      // Sidebar lists are keyed by space — invalidate so the row appears/disappears.
+      if (updated?.space_id) {
+        queryClient.invalidateQueries({ queryKey: ['lists', updated.space_id] })
+      }
+    },
+  })
+
   const handleConfigChange = (next: ViewConfig) => {
     if (activeView) {
       updateView.mutate({ id: activeView.id, config: next })
@@ -254,7 +320,14 @@ export function BoardPage() {
     <div className="h-full flex flex-col bg-canvas">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-7 py-3 sm:py-4 gap-4 border-b border-ink-5/20 bg-surface/50 backdrop-blur-sm">
         <div className="min-w-0">
-          <h1 className="text-base font-bold text-ink-1 truncate">{list?.name ?? 'Board'}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-ink-1 truncate">{list?.name ?? 'Board'}</h1>
+            {list?.archived && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-medium uppercase tracking-wide">
+                Archived
+              </span>
+            )}
+          </div>
           <p className="text-[11px] font-medium text-ink-4 mt-0.5">
             {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
             {statuses.length > 0 && <span className="hidden sm:inline"> · {statuses.length} statuses</span>}
@@ -298,6 +371,16 @@ export function BoardPage() {
              <span className="hidden sm:inline">Add Task</span>
              <span className="sm:hidden">Add</span>
           </Button>
+          <ListActionsMenu
+            archived={!!list?.archived}
+            disabled={archiveList.isPending || !listId}
+            onArchive={() => {
+              if (confirm('Archive this list? It will be hidden from the space sidebar but can be restored later.')) {
+                archiveList.mutate(true)
+              }
+            }}
+            onUnarchive={() => archiveList.mutate(false)}
+          />
         </div>
       </div>
 

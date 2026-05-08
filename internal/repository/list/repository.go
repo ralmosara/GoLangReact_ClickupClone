@@ -83,6 +83,13 @@ func (r *Repo) Update(ctx context.Context, l *domain.List) error {
 	return err
 }
 
+func (r *Repo) SetArchived(ctx context.Context, id uuid.UUID, archived bool) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE lists SET archived=$2, updated_at=NOW() WHERE id=$1`,
+		id, archived)
+	return err
+}
+
 func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM lists WHERE id=$1`, id)
 	return err
