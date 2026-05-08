@@ -99,8 +99,14 @@ export function BoardView({ tasks, statuses, workspaceId, listId, config, taskAs
 
     if (targetColumn.isLegacy) {
       if (task.status !== targetColumn.key) {
-        api.patch(`tasks/${taskId}`, { json: { status: targetColumn.key } }).json<Task>()
-          .finally(() => queryClient.invalidateQueries({ queryKey: ['tasks', listId] }))
+        reorder.mutate({
+          taskId,
+          listId,
+          statusId: null, // Clear custom status_id
+          status: targetColumn.key,
+          prev: undefined,
+          next: undefined,
+        })
       }
       return
     }
@@ -109,8 +115,8 @@ export function BoardView({ tasks, statuses, workspaceId, listId, config, taskAs
     const insertAt = overIndex < 0 ? targetTasks.length : overIndex
     const prev = targetTasks[insertAt - 1]?.position
     const next = targetTasks[insertAt]?.position
-    const statusChange = targetColumn.key === task.status_id ? undefined : targetColumn.key
 
+    const statusChange = targetColumn.key === task.status_id ? undefined : targetColumn.key
     reorder.mutate({ taskId, listId, statusId: statusChange, prev, next })
   }
 

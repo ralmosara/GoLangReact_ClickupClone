@@ -156,10 +156,10 @@ func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (r *Repo) Reorder(ctx context.Context, id uuid.UUID, statusID *uuid.UUID, position float64) error {
+func (r *Repo) Reorder(ctx context.Context, id uuid.UUID, status string, statusID *uuid.UUID, position float64) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE tasks SET status_id=$2, position=$3, updated_at=NOW() WHERE id=$1`,
-		id, statusID, position)
+		`UPDATE tasks SET status=$2, status_id=$3, position=$4, updated_at=NOW() WHERE id=$1`,
+		id, status, statusID, position)
 	return err
 }
 

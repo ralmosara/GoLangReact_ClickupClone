@@ -90,10 +90,11 @@ type UpdateInput struct {
 }
 
 type ReorderInput struct {
-	StatusID *uuid.UUID `json:"status_id,omitempty"`
-	Position *float64   `json:"position,omitempty"`
-	Prev     *float64   `json:"prev,omitempty"`
-	Next     *float64   `json:"next,omitempty"`
+	Status   *string     `json:"status,omitempty"`
+	StatusID **uuid.UUID `json:"status_id,omitempty"`
+	Position *float64    `json:"position,omitempty"`
+	Prev     *float64    `json:"prev,omitempty"`
+	Next     *float64    `json:"next,omitempty"`
 }
 
 func (s *Service) Create(ctx context.Context, creator uuid.UUID, in CreateInput) (*domain.Task, error) {
@@ -305,20 +306,43 @@ func (s *Service) Reorder(ctx context.Context, actor, id uuid.UUID, in ReorderIn
 	case in.Next != nil:
 		pos = *in.Next - 1000
 	default:
-		max, _ := s.repo.MaxPosition(ctx, t.ListID, in.StatusID)
+		var sid *uuid.UUID
+		if in.StatusID != nil {
+			sid = *in.StatusID
+		} else {
+			sid = t.StatusID
+		}
+		max, _ := s.repo.MaxPosition(ctx, t.ListID, sid)
 		pos = max + 1000
 	}
 
-	newStatusID := t.StatusID
+	var newStatusID *uuid.UUID
 	if in.StatusID != nil {
-		newStatusID = in.StatusID
+		newStatusID = *in.StatusID
+	} else {
+		newStatusID = t.StatusID
 	}
 
-	if err := s.repo.Reorder(ctx, id, newStatusID, pos); err != nil {
+	newStatus := t.Status
+	if in.Status != nil {
+		newStatus = *in.Status
+	}
+
+	// Sync status name if statusID changed to a non-nil value
+	if in.StatusID != nil && *in.StatusID != nil && s.statuses != nil {
+		if st, _ := s.statuses.GetByID(ctx, **in.StatusID); st != nil {
+			newStatus = st.Name
+		}
+	}
+
+	if err := s.repo.Reorder(ctx, id, newStatus, newStatusID, pos); err != nil {
 		return nil, err
 	}
 	statusChanged := (t.StatusID == nil) != (newStatusID == nil) ||
-		(t.StatusID != nil && newStatusID != nil && *t.StatusID != *newStatusID)
+		(t.StatusID != nil && newStatusID != nil && *t.StatusID != *newStatusID) ||
+		t.Status != newStatus
+
+	t.Status = newStatus
 	t.StatusID = newStatusID
 	t.Position = pos
 

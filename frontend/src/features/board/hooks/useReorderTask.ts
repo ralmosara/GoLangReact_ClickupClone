@@ -20,27 +20,34 @@ export interface ReorderArgs {
   listId: string
   /** `null` to clear to a sentinel "no status"; `undefined` to leave unchanged. */
   statusId: string | null | undefined
+  status?: string
   prev: number | undefined
   next: number | undefined
 }
 
 export function useReorderTask() {
   return useMutation({
-    mutationFn: async ({ taskId, statusId, prev, next }: ReorderArgs) => {
+    mutationFn: async ({ taskId, statusId, status, prev, next }: ReorderArgs) => {
       const body: Record<string, unknown> = {}
       if (statusId !== undefined) body.status_id = statusId
+      if (status !== undefined) body.status = status
       if (prev !== undefined) body.prev = prev
       if (next !== undefined) body.next = next
       return api.patch(`tasks/${taskId}/position`, { json: body }).json<Task>()
     },
-    onMutate: async ({ taskId, listId, statusId, prev, next }) => {
+    onMutate: async ({ taskId, listId, statusId, status, prev, next }) => {
       await queryClient.cancelQueries({ queryKey: ['tasks', listId] })
       const previous = queryClient.getQueryData<Task[]>(['tasks', listId])
       if (previous) {
         const newPos = computePosition(prev, next)
         const updated = previous.map((t) =>
           t.id === taskId
-            ? { ...t, position: newPos, status_id: statusId === undefined ? t.status_id : (statusId ?? undefined) }
+            ? {
+                ...t,
+                position: newPos,
+                status_id: statusId === undefined ? t.status_id : (statusId ?? undefined),
+                status: status === undefined ? t.status : status,
+              }
             : t,
         )
         // Re-sort so the optimistic view matches the server's ORDER BY position.

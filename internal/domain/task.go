@@ -49,9 +49,9 @@ type TaskRepo interface {
 	Update(ctx context.Context, t *Task) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
-	// Reorder persists a new (status_id, position) tuple for drag-drop.
+	// Reorder persists a new (status, status_id, position) tuple for drag-drop.
 	// Callers compute position via gap-insertion (prev+next)/2.
-	Reorder(ctx context.Context, id uuid.UUID, statusID *uuid.UUID, position float64) error
+	Reorder(ctx context.Context, id uuid.UUID, status string, statusID *uuid.UUID, position float64) error
 
 	// MaxPosition returns the highest position in the given (list, status) bucket.
 	MaxPosition(ctx context.Context, listID uuid.UUID, statusID *uuid.UUID) (float64, error)
