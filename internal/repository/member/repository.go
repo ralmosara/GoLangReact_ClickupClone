@@ -19,10 +19,24 @@ func (r *Repo) AddWorkspaceMember(ctx context.Context, wsID, userID uuid.UUID, r
 	if role == "" {
 		role = "member"
 	}
+	// Populate role_id alongside the legacy text column. The sub-SELECT
+	// resolves the built-in role by name; if `role` is a custom-role name
+	// scoped to the workspace, the LIMIT 1 picks up that match. If neither
+	// exists, role_id stays NULL and the COALESCE in policy.workspaceRole
+	// keeps reads working off the text column.
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO workspace_members (workspace_id, user_id, role)
-		VALUES ($1,$2,$3)
-		ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role
+		INSERT INTO workspace_members (workspace_id, user_id, role, role_id)
+		VALUES (
+		    $1, $2, $3,
+		    (SELECT id FROM roles
+		      WHERE name = $3
+		        AND (workspace_id IS NULL OR workspace_id = $1)
+		      ORDER BY workspace_id NULLS LAST
+		      LIMIT 1)
+		)
+		ON CONFLICT (workspace_id, user_id) DO UPDATE
+		   SET role    = EXCLUDED.role,
+		       role_id = EXCLUDED.role_id
 	`, wsID, userID, role)
 	return err
 }

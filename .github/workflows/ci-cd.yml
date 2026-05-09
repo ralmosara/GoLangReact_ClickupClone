@@ -12,9 +12,9 @@ env:
   IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/clickup-frontend
 
 jobs:
-  # ── Backend ──────────────────────────────────────────────────────────────
+  # ── Backend: vet, lint, security, unit tests ─────────────────────────────
   backend:
-    name: Backend – vet & build
+    name: Backend – vet / lint / test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,12 +27,53 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Build
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          install-go: false
+
+      - name: gosec (SAST)
+        uses: securego/gosec@master
+        with:
+          # Exclude the integration test dir so Docker-only paths don't trip
+          # the analyzer; production code is fully covered.
+          args: "-quiet -exclude-dir=internal/integration_test ./..."
+
+      - name: Unit tests
+        # Skip the integration_test package here — the next job spins up a
+        # real Postgres for that and runs it separately so PR feedback is
+        # fast when only Go source changes.
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... | grep -v '/internal/integration_test$')
+          go test -race -count=1 -coverprofile=coverage.out $PKGS
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -n 5
+
+      - name: Build (static)
         run: CGO_ENABLED=0 go build -o /dev/null ./cmd/server
+
+  # ── Backend integration tests (testcontainers + real Postgres) ───────────
+  backend-integration:
+    name: Backend – integration (testcontainers)
+    runs-on: ubuntu-latest
+    # The hosted runner ships with Docker; testcontainers-go uses it directly.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Integration tests
+        run: go test -count=1 -timeout=10m ./internal/integration_test/...
 
   # ── Frontend ─────────────────────────────────────────────────────────────
   frontend:
-    name: Frontend – typecheck & build
+    name: Frontend – typecheck / audit / build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,18 +93,25 @@ jobs:
       - name: Typecheck
         run: npx tsc -b --noEmit
 
+      - name: npm audit (high+ severity, advisory-only)
+        # Don't fail the build on audit findings yet — the inventory shows
+        # the dependency tree is unaudited. Surface the report; promote to
+        # `--audit-level=high` once the backlog is clear.
+        run: npm audit --audit-level=high || true
+
       - name: Build
         run: npm run build
 
-  # ── Docker publish (main only) ────────────────────────────────────────────
+  # ── Docker publish (main only) + image scan ──────────────────────────────
   publish:
     name: Publish Docker images
-    needs: [backend, frontend]
+    needs: [backend, backend-integration, frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -97,3 +145,26 @@ jobs:
             ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Trivy scan – backend
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+          format: sarif
+          output: trivy-backend.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Trivy scan – frontend
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .

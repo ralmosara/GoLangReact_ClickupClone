@@ -10,6 +10,8 @@ import { TaskDetailPage } from './features/task-detail/index'
 import { SettingsPage } from './features/settings/index'
 import { NotificationsPage } from './features/notifications/index'
 import { MembersPage } from './features/members/MembersPage'
+import { UserManagementPage } from './features/users/UserManagementPage'
+import { GlobalUserManagementPage } from './features/users/GlobalUserManagementPage'
 import { AuditPage } from './features/audit/AuditPage'
 import { TimeReportPage } from './features/time-tracking/TimeReportPage'
 import { AutomationsPage } from './features/automations/AutomationsPage'
@@ -25,10 +27,30 @@ import { TemplatesPage } from './features/templates/TemplatesPage'
 import { CredentialsPage } from './features/credentials/CredentialsPage'
 import { AccomplishmentsPage } from './features/accomplishments/AccomplishmentsPage'
 import { useAuthStore } from './store/auth'
+import { useIsAdmin } from './hooks/useIsAdmin'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
   if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+/**
+ * RequireAdmin gates a route on the same `user.manage` permission the
+ * backend uses for /admin/*. Non-admins are redirected to /workspaces
+ * rather than shown a "forbidden" placeholder so the URL doesn't stay
+ * pinned to a page they can't use.
+ *
+ * Loading state renders a blank canvas — same shape RequireWorkspaceMember
+ * uses — so the briefly-empty period during the permissions check
+ * doesn't flicker the previous page in.
+ */
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { loading, isAdmin } = useIsAdmin()
+  if (loading) {
+    return <div className="min-h-screen bg-canvas" aria-hidden="true" />
+  }
+  if (!isAdmin) return <Navigate to="/workspaces" replace />
   return <>{children}</>
 }
 
@@ -82,6 +104,23 @@ export function AppRouter() {
         }
       />
 
+      {/* Global User Management — admin-only via the user.manage permission
+          on at least one workspace. Both client AND server enforce: the
+          RequireAdmin wrapper redirects non-admins back to /workspaces
+          before the page even mounts; the backend independently 403s
+          on /admin/users. NOT wrapped in RequireWorkspaceMember since
+          it isn't workspace-scoped. */}
+      <Route
+        path="/admin/users"
+        element={
+          <RequireAuth>
+            <RequireAdmin>
+              <GlobalUserManagementPage />
+            </RequireAdmin>
+          </RequireAuth>
+        }
+      />
+
       <Route
         path="/workspaces/:workspaceId"
         element={
@@ -98,6 +137,7 @@ export function AppRouter() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="members" element={<MembersPage />} />
+        <Route path="users" element={<UserManagementPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="time-report" element={<TimeReportPage />} />
         <Route path="automations" element={<AutomationsPage />} />

@@ -1,31 +1,21 @@
 import { useState } from 'react'
-import { useLogin, useRegister } from '../../hooks/useAuth'
+import { useLogin } from '../../hooks/useAuth'
 import { Button, Input } from '../../components/ui'
-import { cn } from '../../lib/utils'
-
-type Mode = 'login' | 'register'
 
 export function LoginPage() {
-  const [mode, setMode] = useState<Mode>('login')
+  // Self-registration was removed in favour of admin-driven user creation.
+  // The only path to a new account is a workspace admin inviting the user
+  // via Members → Invite. This page is therefore login-only.
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName]         = useState('')
 
-  const login    = useLogin()
-  const register = useRegister()
-  const mut      = mode === 'login' ? login : register
-  const errMsg   = mut.error ? 'Invalid email or password. Please try again.' : null
-
-  const submit = () =>
-    mode === 'login'
-      ? login.mutate({ email, password })
-      : register.mutate({ email, password, name })
+  const login  = useLogin()
+  const errMsg = login.error ? 'Invalid email or password. Please try again.' : null
 
   return (
     <div className="min-h-screen flex bg-canvas-gradient">
       {/* Left decorative panel */}
       <div className="hidden lg:flex w-[44%] flex-col justify-between bg-sidebar p-12 relative overflow-hidden">
-        {/* Gradient orbs */}
         <div className="absolute top-[-80px] left-[-80px] w-[360px] h-[360px] bg-brand-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-[-40px] right-[-60px] w-[280px] h-[280px] bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -76,59 +66,25 @@ export function LoginPage() {
             <span className="text-ink-1 font-semibold text-sm">ClickUp</span>
           </div>
 
-          {/* Mode tabs */}
-          <div className="inline-flex bg-ink-5/40 rounded-lg p-0.5 mb-8">
-            {(['login', 'register'] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  'px-5 py-1.5 text-sm font-medium rounded-md transition-all',
-                  mode === m
-                    ? 'bg-white text-ink-1 shadow-card'
-                    : 'text-ink-3 hover:text-ink-2',
-                )}
-              >
-                {m === 'login' ? 'Sign in' : 'Create account'}
-              </button>
-            ))}
-          </div>
-
-          <h2 className="text-2xl font-bold text-ink-1 mb-1">
-            {mode === 'login' ? 'Welcome back' : 'Get started free'}
-          </h2>
-          <p className="text-sm text-ink-3 mb-7">
-            {mode === 'login'
-              ? 'Sign in to your workspace'
-              : 'Create your account in seconds'}
-          </p>
+          <h2 className="text-2xl font-bold text-ink-1 mb-1">Welcome back</h2>
+          <p className="text-sm text-ink-3 mb-7">Sign in to your workspace</p>
 
           <form
             className="space-y-4"
-            onSubmit={(e) => { e.preventDefault(); submit() }}
+            onSubmit={(e) => { e.preventDefault(); login.mutate({ email, password }) }}
           >
-            {mode === 'register' && (
-              <Input
-                label="Full name"
-                type="text"
-                placeholder="Jane Smith"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus={mode === 'register'}
-              />
-            )}
             <Input
               label="Email"
               type="email"
               placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoFocus={mode === 'login'}
+              autoFocus
             />
             <Input
               label="Password"
               type="password"
-              placeholder={mode === 'register' ? 'Minimum 8 characters' : '••••••••'}
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -145,22 +101,16 @@ export function LoginPage() {
             <Button
               type="submit"
               size="lg"
-              loading={mut.isPending}
-              disabled={!email || !password || (mode === 'register' && !name)}
+              loading={login.isPending}
+              disabled={!email || !password}
               className="w-full mt-2"
             >
-              {mode === 'login' ? 'Sign in' : 'Create account'}
+              Sign in
             </Button>
           </form>
 
           <p className="text-center text-xs text-ink-4 mt-8">
-            {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
-            <button
-              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-              className="text-brand-600 font-medium hover:text-brand-700 transition-colors"
-            >
-              {mode === 'login' ? 'Sign up' : 'Sign in'}
-            </button>
+            Need an account? Ask your workspace admin to invite you.
           </p>
         </div>
       </div>

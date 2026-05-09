@@ -32,6 +32,7 @@ import {
   Settings,
   Target,
   Trash2,
+  UserCog,
   Users,
   X,
 } from 'lucide-react'
@@ -46,6 +47,7 @@ import type { List, Space, Workspace } from '../../types'
 import { NotificationToast } from '../notifications/components/NotificationToast'
 import { useUnreadCount } from '../notifications/hooks/useUnreadCount'
 import { SearchPalette } from '../search/SearchPalette'
+import { KeyboardShortcutsOverlay } from '../../components/ui/KeyboardShortcutsOverlay'
 
 /* -------------------------------------------------------------------------- */
 /* Modals                                                                     */
@@ -262,6 +264,7 @@ export function WorkspaceLayout() {
       )}
       {workspaceId && <NotificationToast workspaceId={workspaceId} />}
       <SearchPalette />
+      <KeyboardShortcutsOverlay />
     </div>
   )
 }
@@ -839,6 +842,12 @@ function UserRow({ workspaceId }: { workspaceId: string }) {
               onClick={() => { setOpen(false); navigate(`/workspaces/${workspaceId}/members`) }}
             >
               Members
+            </MenuItem>
+            <MenuItem
+              icon={<UserCog className="w-4 h-4" />}
+              onClick={() => { setOpen(false); navigate(`/workspaces/${workspaceId}/users`) }}
+            >
+              User Management
             </MenuItem>
             <MenuItem
               icon={<ActivityIcon className="w-4 h-4" />}

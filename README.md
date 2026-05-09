@@ -122,21 +122,56 @@ It reads `migrations/*.up.sql` in lexicographic order and tracks applied version
 - Apply automatically on boot: `AUTO_MIGRATE=true` (default).
 - Apply and exit: `make migrate`.
 
+## Bootstrap
+
+Self-registration is disabled — there is no public `/auth/register` endpoint.
+The first owner is created by the seeder; every subsequent user is invited
+by an existing workspace admin.
+
+```bash
+go run ./cmd/server -migrate     # apply schema
+go run ./scripts/seed.go         # creates demo@demo.test (owner) and three other users
+```
+
+Default password for every seeded user: `demo1234` (override with
+`SEED_PASSWORD=...` before running). Change it in Settings on first login.
+
+To onboard a real user once an admin exists, the admin POSTs to
+`/api/v1/workspaces/{workspaceID}/members` with `{email, name, password, role}` —
+the server hashes the supplied password, creates the local account, and
+adds the membership row in one call. Share the password with the new user
+out-of-band; they log in via `/auth/login` and can change it from Settings.
+
 ## API
+
 All endpoints are under `/api/v1`. Auth is via `Authorization: Bearer <token>`.
 
 Public:
-- `POST /auth/register` `{ email, password, name }`
-- `POST /auth/login`    `{ email, password }`
+- ~~`POST /auth/register`~~ — **removed**: self-registration disabled. Use the
+  workspace member-invite flow below to create new users.
+- `POST /auth/login`        `{ email, password }`
+- `POST /auth/mfa/verify`   `{ challenge_token, code }` (only after MFA is enrolled)
+- `GET  /auth/oidc/{provider}/login` — start an OIDC sign-in (when configured)
 
 Private (require token):
 - `GET  /me`
 - `POST /workspaces`, `GET /workspaces`
+- `POST /workspaces/{workspaceID}/members` `{ email, role }` — invite an **already-registered** user. Returns `404` with `{reason: "user_not_found"}` when the email isn't on file — create the user via the User Management endpoints below.
 - `POST /spaces`, `GET /workspaces/{workspaceID}/spaces`, `PATCH /spaces/{id}`, `DELETE /spaces/{id}`
 - `POST /folders`, `GET /spaces/{spaceID}/folders`, `DELETE /folders/{id}`
 - `POST /lists`, `GET /spaces/{spaceID}/lists`, `GET /folders/{folderID}/lists`
 - `POST /tasks`, `GET /tasks?list_id=...&status=...`, `PATCH /tasks/{id}`, `DELETE /tasks/{id}`
 - `POST /comments`, `GET /tasks/{taskID}/comments`
+- `GET  /permissions`, `GET /workspaces/{id}/roles`, `GET /workspaces/{id}/roles/effective`
+
+User management (require `user.manage` permission — granted to owner + admin built-ins):
+- `GET    /workspaces/{wsID}/users` — list workspace users with role & joined-at
+- `POST   /workspaces/{wsID}/users` `{ email, name, password, role }` — create account + add as workspace member
+- `PATCH  /workspaces/{wsID}/users/{userID}` `{ name }` — update display name
+- `POST   /workspaces/{wsID}/users/{userID}/reset-password` `{ password }` — admin password reset
+- `DELETE /workspaces/{wsID}/users/{userID}` — hard-delete the account
+- `GET  /workspaces/{id}/audit/export?format=csv|json`
+- `GET  /workspaces/{id}/gdpr/export`
 
 WebSocket at `/ws` — send `{"action":"join","room":"list:<uuid>"}` to subscribe to task events for that list.
 

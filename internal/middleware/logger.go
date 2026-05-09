@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/yourorg/clickup/internal/observability"
 )
 
 // statusRecorder wraps ResponseWriter to capture the status code emitted by
@@ -16,11 +18,18 @@ import (
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
+	bytes  int
 }
 
 func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	n, err := s.ResponseWriter.Write(b)
+	s.bytes += n
+	return n, err
 }
 
 // Hijack is required by gorilla/websocket to take over the connection for the
@@ -41,16 +50,28 @@ func (s *statusRecorder) Flush() {
 	}
 }
 
-func Logger(l *slog.Logger) func(http.Handler) http.Handler {
+// Logger emits one structured log line per request. It pulls the per-request
+// logger that RequestLogger attached to the context (which carries
+// request_id/method/path) and falls back to the supplied base logger if no
+// per-request logger is present — keeping it backwards-compatible with code
+// paths that don't go through chi (e.g. raw mux routes).
+func Logger(base *slog.Logger) func(http.Handler) http.Handler {
+	if base == nil {
+		base = slog.Default()
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			rec := &statusRecorder{ResponseWriter: w, status: 200}
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
+
+			l := observability.FromContext(r.Context())
+			if l == slog.Default() {
+				l = base
+			}
 			l.Info("http",
-				"method", r.Method,
-				"path", r.URL.Path,
 				"status", rec.status,
+				"bytes", rec.bytes,
 				"dur_ms", time.Since(start).Milliseconds(),
 			)
 		})

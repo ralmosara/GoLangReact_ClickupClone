@@ -5,14 +5,39 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/yourorg/clickup/internal/domain"
+	auditsvc "github.com/yourorg/clickup/internal/service/audit"
 )
 
 type Repo struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
+
+// ListFacets returns the distinct entity_types, verbs and actor_ids in
+// the given workspace. We cap at 90 days so the query stays fast as the
+// audit table grows; for the activity-log UI that window is plenty —
+// older filters can be reached by paging the raw export.
+//
+// Implements service/audit.FacetsProvider so the service can pick this
+// up via type assertion without the domain layer needing the method.
+func (r *Repo) ListFacets(ctx context.Context, workspaceID uuid.UUID) (*auditsvc.Facets, error) {
+	const q = `
+		SELECT
+			COALESCE(array_agg(DISTINCT entity_type) FILTER (WHERE entity_type IS NOT NULL), '{}'),
+			COALESCE(array_agg(DISTINCT verb)        FILTER (WHERE verb        IS NOT NULL), '{}'),
+			COALESCE(array_agg(DISTINCT actor_id)    FILTER (WHERE actor_id    IS NOT NULL), '{}'::uuid[])
+		FROM audit_log
+		WHERE workspace_id = $1
+		  AND created_at >= NOW() - INTERVAL '90 days'`
+	var f auditsvc.Facets
+	if err := r.pool.QueryRow(ctx, q, workspaceID).Scan(&f.EntityTypes, &f.Verbs, &f.ActorIDs); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
 
 const cols = `id, workspace_id, actor_id, entity_type, entity_id, verb, before_json, after_json, created_at`
 
@@ -42,8 +67,17 @@ func (r *Repo) List(ctx context.Context, f domain.AuditFilter) ([]domain.AuditEn
 	if f.EntityID != nil {
 		add("entity_id = ?", *f.EntityID)
 	}
+	if f.ActorID != nil {
+		add("actor_id = ?", *f.ActorID)
+	}
+	if f.Verb != nil {
+		add("verb = ?", *f.Verb)
+	}
 	if f.Before != nil {
 		add("created_at < ?", *f.Before)
+	}
+	if f.Since != nil {
+		add("created_at >= ?", *f.Since)
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {

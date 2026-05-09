@@ -25,9 +25,11 @@ const (
 	EventTaskDeleted = "task.deleted"
 	EventTaskMoved   = "task.moved"
 
-	EventCommentCreated = "comment.created"
-	EventCommentDeleted = "comment.deleted"
-	EventComment        = EventCommentCreated // legacy alias
+	EventCommentCreated  = "comment.created"
+	EventCommentUpdated  = "comment.updated"
+	EventCommentDeleted  = "comment.deleted"
+	EventCommentReaction = "comment.reaction"
+	EventComment         = EventCommentCreated // legacy alias
 
 	EventStatusCreated = "status.created"
 	EventStatusUpdated = "status.updated"

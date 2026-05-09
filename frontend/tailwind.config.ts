@@ -2,6 +2,11 @@ import type { Config } from 'tailwindcss'
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // class-based dark mode — toggled by <html data-theme="dark"> + the
+  // `dark` class on <html>. Wired by ThemeProvider in src/lib/theme.tsx.
+  // The `dark:` variants below only apply when that class is present, so
+  // pages that haven't been retrofitted continue to render in light mode.
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
       fontFamily: {

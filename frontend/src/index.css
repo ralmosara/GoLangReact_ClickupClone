@@ -19,6 +19,19 @@
     color: #111827;
     font-size: 14px;
     line-height: 1.5;
+    /* Smooth the light/dark transition to avoid jarring flash when the
+       theme toggle flips. Limited to bg + color so animations on other
+       properties are unaffected. */
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  /* Dark theme overrides — only the page-level surfaces. Component-level
+     dark variants live alongside their `dark:` Tailwind classes. Pages
+     that haven't been retrofitted with dark variants will look slightly
+     off until they are; the body still flips so it's obvious. */
+  html.dark body, html[data-theme="dark"] body {
+    background: #0B0B14;
+    color: #E5E7EB;
   }
 
   input, textarea, select, button {
@@ -29,8 +42,11 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(17,24,39,0.12); border-radius: 999px; }
   ::-webkit-scrollbar-thumb:hover { background: rgba(17,24,39,0.2); }
+  html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); }
+  html.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
 
   ::selection { background: rgba(91,92,248,0.15); }
+  html.dark ::selection { background: rgba(124,124,250,0.30); }
 }
 
 @layer utilities {

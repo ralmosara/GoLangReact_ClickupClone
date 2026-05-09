@@ -2,6 +2,8 @@ package search
 
 import (
 	"context"
+	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,15 +15,46 @@ type Repo struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
 
+// buildPrefixTSQuery turns a free-form user query into a tsquery string with
+// prefix matching on every term, e.g. "auth tok" -> "auth:* & tok:*".
+//
+// We tokenize on any non-alphanumeric/underscore run, which also strips every
+// character that has special meaning in tsquery syntax (& | ! ( ) : * < ' " etc.),
+// so the result is always safe to pass to to_tsquery without further escaping.
+// Returns "" if the input has no usable tokens — callers should short-circuit
+// in that case rather than executing the SQL.
+func buildPrefixTSQuery(raw string) string {
+	lowered := strings.ToLower(raw)
+	tokens := strings.FieldsFunc(lowered, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+	})
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, len(tokens))
+	for i, t := range tokens {
+		parts[i] = t + ":*"
+	}
+	return strings.Join(parts, " & ")
+}
+
 // Search runs a plain-language query against all searchable entities within the
-// given workspace. Uses `plainto_tsquery` so callers don't need to know FTS
-// syntax. Each entity is scoped to the workspace through joins on the hierarchy.
+// given workspace. The user query is tokenized into a prefix tsquery
+// (e.g. "auth tok" -> "auth:* & tok:*") so partial words still hit; this is
+// what users almost always expect from a typeahead palette. Each entity is
+// scoped to the workspace through joins on the hierarchy.
 func (r *Repo) Search(ctx context.Context, workspaceID uuid.UUID, query string, limit int) ([]domain.SearchHit, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	tsq := buildPrefixTSQuery(query)
+	if tsq == "" {
+		// Nothing tokenizable (empty / pure punctuation) — no point hitting the DB.
+		// The handler coerces a nil slice to [] for the JSON response.
+		return nil, nil
+	}
 	q := `
-		WITH q AS (SELECT plainto_tsquery('simple', $2) AS tsq)
+		WITH q AS (SELECT to_tsquery('simple', $2) AS tsq)
 		SELECT * FROM (
 			-- Tasks scoped to this workspace through spaces→lists→tasks.
 			SELECT 'task'::text AS entity_type,
@@ -93,7 +126,7 @@ func (r *Repo) Search(ctx context.Context, workspaceID uuid.UUID, query string, 
 		ORDER BY rank DESC, created_at DESC
 		LIMIT $3
 	`
-	rows, err := r.pool.Query(ctx, q, workspaceID, query, limit)
+	rows, err := r.pool.Query(ctx, q, workspaceID, tsq, limit)
 	if err != nil {
 		return nil, err
 	}
