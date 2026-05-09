@@ -13,12 +13,18 @@ import { BurndownWidget } from './components/BurndownWidget'
 import { VelocityWidget } from './components/VelocityWidget'
 import { TaskCountWidget } from './components/TaskCountWidget'
 import { TimePerUserWidget } from './components/TimePerUserWidget'
+import { MyTasksWidget } from './components/MyTasksWidget'
+import { ActivityFeedWidget } from './components/ActivityFeedWidget'
+import { GoalProgressWidget } from './components/GoalProgressWidget'
 
 const WIDGET_META: Record<WidgetKind, { label: string; desc: string }> = {
   burndown:      { label: 'Burndown',      desc: 'Remaining story points over a sprint' },
   velocity:      { label: 'Velocity',      desc: 'Completed points per sprint' },
   task_count:    { label: 'Task count',    desc: 'Tasks grouped by status in a list' },
   time_per_user: { label: 'Time per user', desc: 'Hours logged by teammate' },
+  my_tasks:      { label: 'My tasks',      desc: "Open tasks assigned to you, bucketed by due date" },
+  activity:      { label: 'Activity',      desc: 'Recent mutations across the workspace' },
+  goal_progress: { label: 'Goal progress', desc: 'Active goals with completion %' },
 }
 
 export function DashboardsPage() {
@@ -161,6 +167,9 @@ function WidgetRenderer({ widget }: { widget: Widget }) {
     case 'velocity':      return <VelocityWidget data={data as never} />
     case 'task_count':    return <TaskCountWidget data={data as never} />
     case 'time_per_user': return <TimePerUserWidget data={data as never} />
+    case 'my_tasks':      return <MyTasksWidget data={data as never} workspaceId={(widget.config as { workspace_id?: string })?.workspace_id} />
+    case 'activity':      return <ActivityFeedWidget data={data as never} />
+    case 'goal_progress': return <GoalProgressWidget data={data as never} />
     default:              return <p className="text-xs text-ink-4">Unsupported widget kind.</p>
   }
 }
@@ -226,6 +235,11 @@ function AddWidgetModal({
       if (kind === 'velocity')      config.list_id = listId
       if (kind === 'burndown')      config.sprint_id = sprintId
       if (kind === 'time_per_user') config.workspace_id = workspaceId
+      // Workspace-scoped widgets — viewer comes from the auth token
+      // server-side, no list/sprint picker needed.
+      if (kind === 'my_tasks')      config.workspace_id = workspaceId
+      if (kind === 'activity')      config.workspace_id = workspaceId
+      if (kind === 'goal_progress') config.workspace_id = workspaceId
       return api.post(`dashboards/${dashboardId}/widgets`, {
         json: { kind, title: title || WIDGET_META[kind].label, config },
       }).json<Widget>()
@@ -236,8 +250,11 @@ function AddWidgetModal({
     },
   })
 
+  // Widgets that don't need a per-list/per-sprint pick can be added
+  // immediately. Listed by kind to keep the matrix obvious.
+  const workspaceOnlyKinds: WidgetKind[] = ['time_per_user', 'my_tasks', 'activity', 'goal_progress']
   const canSubmit =
-    kind === 'time_per_user' ||
+    workspaceOnlyKinds.includes(kind) ||
     (kind === 'burndown' && sprintId) ||
     ((kind === 'task_count' || kind === 'velocity') && listId)
 

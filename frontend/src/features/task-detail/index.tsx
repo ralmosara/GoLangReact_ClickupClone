@@ -8,7 +8,7 @@ import { rooms } from '../../lib/ws'
 import { useWsEvent, useWsRooms } from '../../hooks/useWebSocket'
 import { cn, formatRelative, STATUS_COLORS, STATUS_DOT, STATUS_LABEL, PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/utils'
 import { Button, PageSpinner } from '../../components/ui'
-import type { Comment, Status, Task } from '../../types'
+import type { Status, Task } from '../../types'
 
 import { AssigneesPicker } from './components/AssigneesPicker'
 import { TagsPicker } from './components/TagsPicker'
@@ -21,13 +21,15 @@ import { TimeTracker } from '../time-tracking/components/TimeTracker'
 import { TimeEntriesList } from '../time-tracking/components/TimeEntriesList'
 import { DependenciesPanel } from '../dependencies/DependenciesPanel'
 import { RecurrencePicker } from './components/RecurrencePicker'
+import { CommentsThread } from './components/CommentsThread'
 
 const LEGACY_STATUSES = ['open', 'in_progress', 'review', 'completed', 'cancelled'] as const
 
 export function TaskDetailPage() {
   const { taskId, workspaceId } = useParams<{ taskId: string; workspaceId: string }>()
   const navigate = useNavigate()
-  const [commentBody, setCommentBody] = useState('')
+  // Comment composer state moved into CommentsThread — keeping the
+  // local handles only for the still-inline pieces (name, fields).
   const [editingName, setEditingName] = useState(false)
   const [localName, setLocalName] = useState('')
   const [showFieldsManager, setShowFieldsManager] = useState(false)
@@ -44,12 +46,6 @@ export function TaskDetailPage() {
     enabled: !!task?.list_id,
   })
 
-  const { data: comments } = useQuery({
-    queryKey: ['comments', taskId],
-    queryFn: () => api.get(`tasks/${taskId}/comments`).json<Comment[]>(),
-    enabled: !!taskId,
-  })
-
   // Join the task room so every sub-panel sees real-time updates.
   useWsRooms(taskId ? [rooms.task(taskId), task?.list_id ? rooms.list(task.list_id) : ''].filter(Boolean) : [])
   useWsEvent('task.updated', (e) => {
@@ -57,10 +53,9 @@ export function TaskDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['task', taskId] })
     }
   })
-  useWsEvent('comment.created', (e) => {
-    if (e.entity_id && comments?.some((c) => c.id === e.entity_id)) return
-    queryClient.invalidateQueries({ queryKey: ['comments', taskId] })
-  })
+  useWsEvent('comment.created', () => queryClient.invalidateQueries({ queryKey: ['comments', taskId] }))
+  useWsEvent('comment.updated', () => queryClient.invalidateQueries({ queryKey: ['comments', taskId] }))
+  useWsEvent('comment.deleted', () => queryClient.invalidateQueries({ queryKey: ['comments', taskId] }))
   useWsEvent('assignee.added', () => queryClient.invalidateQueries({ queryKey: ['task-assignees', taskId] }))
   useWsEvent('assignee.removed', () => queryClient.invalidateQueries({ queryKey: ['task-assignees', taskId] }))
   useWsEvent('attachment.created', () => queryClient.invalidateQueries({ queryKey: ['attachments', taskId] }))
@@ -71,15 +66,6 @@ export function TaskDetailPage() {
     onSuccess: (updated) => {
       queryClient.setQueryData(['task', taskId], updated)
       queryClient.invalidateQueries({ queryKey: ['tasks', updated.list_id] })
-    },
-  })
-
-  const addComment = useMutation({
-    mutationFn: () =>
-      api.post('comments', { json: { task_id: taskId, body: commentBody } }).json<Comment>(),
-    onSuccess: () => {
-      setCommentBody('')
-      queryClient.invalidateQueries({ queryKey: ['comments', taskId] })
     },
   })
 
@@ -205,60 +191,11 @@ export function TaskDetailPage() {
             {workspaceId && <SubtasksPanel parentTask={task} workspaceId={workspaceId} />}
           </div>
 
-          {/* Comments */}
+          {/* Comments — threaded, with reactions and edit history. The
+              composer + list logic lives in CommentsThread; the panel
+              here is just chrome. */}
           <div className="bg-surface border border-ink-5/30 rounded-2xl shadow-card p-4 sm:p-6">
-            <div className="flex items-center gap-2 mb-6">
-              <h3 className="text-sm font-bold text-ink-1">Comments</h3>
-              {(comments?.length ?? 0) > 0 && (
-                <span className="text-[10px] font-bold bg-ink-5/30 text-ink-3 rounded-full px-2 py-0.5">
-                  {comments!.length}
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-4 mb-6">
-              {(comments ?? []).map((c) => (
-                <div key={c.id} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-[10px] font-bold text-brand-600 shrink-0 uppercase">
-                    {c.author_id?.slice(0, 1) || '?'}
-                  </div>
-                  <div className="flex-1">
-                    <div className="bg-canvas/60 border border-ink-5/20 rounded-2xl px-4 py-3">
-                      <p className="text-sm text-ink-1 leading-relaxed whitespace-pre-wrap">{c.body}</p>
-                    </div>
-                    <p className="text-[10px] text-ink-4 mt-1.5 ml-1">
-                      {formatRelative(c.created_at)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {comments?.length === 0 && (
-                <p className="text-sm text-ink-4 py-4 text-center border-2 border-dashed border-ink-5/20 rounded-2xl">
-                  No comments yet. Start the conversation.
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                className="flex-1 h-10 bg-canvas/50 border border-ink-5/30 rounded-xl px-4 text-sm text-ink-1 focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400 placeholder:text-ink-5 transition-all"
-                placeholder="Write a comment…"
-                value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && commentBody.trim()) {
-                    e.preventDefault()
-                    addComment.mutate()
-                  }
-                }}
-              />
-              <Button
-                onClick={() => addComment.mutate()}
-                disabled={!commentBody.trim() || addComment.isPending}
-              >
-                Send
-              </Button>
-            </div>
+            {taskId && <CommentsThread taskId={taskId} />}
           </div>
         </div>
 

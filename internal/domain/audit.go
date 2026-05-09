@@ -24,8 +24,17 @@ type AuditFilter struct {
 	WorkspaceID *uuid.UUID
 	EntityType  *string
 	EntityID    *uuid.UUID
-	Limit       int
-	Before      *time.Time
+	// ActorID restricts to a single actor's actions — backs the "show only
+	// what alice did" filter on the activity log UI.
+	ActorID *uuid.UUID
+	// Verb restricts to a verb (created/updated/deleted/...) — handy for
+	// "show me every delete in the last 30 days" investigations.
+	Verb *string
+	// Since is the lower bound on created_at (inclusive). Pairs with
+	// Before to bracket the time window. Both nil = unbounded.
+	Since  *time.Time
+	Limit  int
+	Before *time.Time
 }
 
 type AuditRepo interface {

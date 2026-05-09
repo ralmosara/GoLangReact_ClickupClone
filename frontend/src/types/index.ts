@@ -14,6 +14,21 @@ export interface Workspace {
   created_at: string
 }
 
+// Role mirrors the backend's domain.Role. workspace_id is null for the four
+// built-in roles (owner/admin/member/guest); set to a workspace UUID for
+// per-workspace custom roles like "Project Manager".
+export interface Role {
+  id: string
+  workspace_id?: string | null
+  name: string
+  description: string
+  is_builtin: boolean
+  rank: number
+  permissions?: string[]
+  created_at: string
+  updated_at: string
+}
+
 export interface Space {
   id: string
   workspace_id: string
@@ -90,13 +105,25 @@ export interface Attachment {
   created_at: string
 }
 
+export interface CommentReaction {
+  emoji: string
+  count: number
+  reacted: boolean
+}
+
 export interface Comment {
   id: string
   task_id: string
   author_id?: string
+  parent_comment_id?: string | null
   body: string
   created_at: string
   updated_at: string
+  edited_at?: string | null
+  deleted_at?: string | null
+  deleted_by?: string | null
+  reply_count: number
+  reactions?: CommentReaction[]
 }
 
 export type TaskStatus = 'open' | 'in_progress' | 'review' | 'completed' | 'cancelled'
@@ -134,6 +161,15 @@ export interface AuditEntry {
   before?: unknown
   after?: unknown
   created_at: string
+}
+
+// Mirrors auditsvc.Facets — populated by /workspaces/{id}/audit/facets.
+// Used by AuditPage to render the entity_type / verb / actor dropdowns
+// without enumerating every audit row client-side.
+export interface AuditFacets {
+  entity_types: string[]
+  verbs: string[]
+  actor_ids: string[]
 }
 
 export type ViewKind = 'board' | 'list' | 'calendar' | 'gantt' | 'table' | 'timeline'
@@ -408,7 +444,14 @@ export interface CloseSprintResult {
   next_sprint_id?: string
 }
 
-export type WidgetKind = 'burndown' | 'velocity' | 'task_count' | 'time_per_user'
+export type WidgetKind =
+  | 'burndown'
+  | 'velocity'
+  | 'task_count'
+  | 'time_per_user'
+  | 'my_tasks'
+  | 'activity'
+  | 'goal_progress'
 
 export interface Dashboard {
   id: string
@@ -513,6 +556,25 @@ export interface AccomplishmentBucket {
   ends_at: string
   count: number
   tasks: AccomplishmentTask[]
+}
+
+// SavedSearch — per-user search bookmark stored server-side. The
+// `filters` field is opaque JSON: it mirrors the same FilterClause
+// shape the View configs use, but the search palette doesn't yet
+// surface the rich filter UI, so for now we just round-trip the
+// query_text + entity_type combo.
+export interface SavedSearch {
+  id: string
+  user_id: string
+  workspace_id: string
+  name: string
+  entity_type?: string | null
+  query_text: string
+  filters: unknown
+  pinned: boolean
+  last_used_at?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Credential {

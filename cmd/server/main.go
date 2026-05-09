@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
@@ -17,6 +19,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"encoding/json"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/yourorg/clickup/internal/audit"
 	"github.com/yourorg/clickup/internal/authz"
@@ -28,6 +32,8 @@ import (
 	"github.com/yourorg/clickup/internal/middleware"
 	"github.com/yourorg/clickup/internal/migrate"
 	"github.com/yourorg/clickup/internal/notify"
+	"github.com/yourorg/clickup/internal/observability"
+	oidcsvc "github.com/yourorg/clickup/internal/service/oidc"
 	"github.com/yourorg/clickup/internal/storage"
 	"github.com/yourorg/clickup/internal/ws"
 
@@ -49,14 +55,21 @@ import (
 	formRepo "github.com/yourorg/clickup/internal/repository/form"
 	goalRepo "github.com/yourorg/clickup/internal/repository/goal"
 	goaltargetRepo "github.com/yourorg/clickup/internal/repository/goaltarget"
-	messageRepo "github.com/yourorg/clickup/internal/repository/message"
 	listRepo "github.com/yourorg/clickup/internal/repository/list"
-	sprintRepo "github.com/yourorg/clickup/internal/repository/sprint"
 	memberRepo "github.com/yourorg/clickup/internal/repository/member"
+	messageRepo "github.com/yourorg/clickup/internal/repository/message"
+	mfaRepo "github.com/yourorg/clickup/internal/repository/mfa"
+	milestoneRepo "github.com/yourorg/clickup/internal/repository/milestone"
+	portfolioRepo "github.com/yourorg/clickup/internal/repository/portfolio"
 	notificationRepo "github.com/yourorg/clickup/internal/repository/notification"
+	oidcRepo "github.com/yourorg/clickup/internal/repository/oidc"
 	reportRepo "github.com/yourorg/clickup/internal/repository/report"
+	roleRepo "github.com/yourorg/clickup/internal/repository/role"
+	savedsearchRepo "github.com/yourorg/clickup/internal/repository/savedsearch"
 	searchRepo "github.com/yourorg/clickup/internal/repository/search"
+	sessionRepo "github.com/yourorg/clickup/internal/repository/session"
 	spaceRepo "github.com/yourorg/clickup/internal/repository/space"
+	sprintRepo "github.com/yourorg/clickup/internal/repository/sprint"
 	statusRepo "github.com/yourorg/clickup/internal/repository/status"
 	tagRepo "github.com/yourorg/clickup/internal/repository/tag"
 	taskRepo "github.com/yourorg/clickup/internal/repository/task"
@@ -79,14 +92,21 @@ import (
 	docSvc "github.com/yourorg/clickup/internal/service/doc"
 	folderSvc "github.com/yourorg/clickup/internal/service/folder"
 	formSvc "github.com/yourorg/clickup/internal/service/form"
+	gdprSvc "github.com/yourorg/clickup/internal/service/gdpr"
 	goalSvc "github.com/yourorg/clickup/internal/service/goal"
-	sprintSvc "github.com/yourorg/clickup/internal/service/sprint"
 	listSvc "github.com/yourorg/clickup/internal/service/list"
 	memberSvc "github.com/yourorg/clickup/internal/service/member"
+	mfaSvc "github.com/yourorg/clickup/internal/service/mfa"
+	milestoneSvc "github.com/yourorg/clickup/internal/service/milestone"
+	portfolioSvc "github.com/yourorg/clickup/internal/service/portfolio"
 	notificationSvc "github.com/yourorg/clickup/internal/service/notification"
 	reportSvc "github.com/yourorg/clickup/internal/service/report"
+	roleSvc "github.com/yourorg/clickup/internal/service/role"
+	savedsearchSvc "github.com/yourorg/clickup/internal/service/savedsearch"
 	searchSvc "github.com/yourorg/clickup/internal/service/search"
+	sessionSvc "github.com/yourorg/clickup/internal/service/session"
 	spaceSvc "github.com/yourorg/clickup/internal/service/space"
+	sprintSvc "github.com/yourorg/clickup/internal/service/sprint"
 	statusSvc "github.com/yourorg/clickup/internal/service/status"
 	tagSvc "github.com/yourorg/clickup/internal/service/tag"
 	taskSvc "github.com/yourorg/clickup/internal/service/task"
@@ -95,6 +115,7 @@ import (
 	userSvc "github.com/yourorg/clickup/internal/service/user"
 	viewSvc "github.com/yourorg/clickup/internal/service/view"
 	whiteboardSvc "github.com/yourorg/clickup/internal/service/whiteboard"
+	workloadSvc "github.com/yourorg/clickup/internal/service/workload"
 	workspaceSvc "github.com/yourorg/clickup/internal/service/workspace"
 
 	attachmentHandler "github.com/yourorg/clickup/internal/handler/attachment"
@@ -107,16 +128,24 @@ import (
 	dashboardHandler "github.com/yourorg/clickup/internal/handler/dashboard"
 	dependencyHandler "github.com/yourorg/clickup/internal/handler/dependency"
 	docHandler "github.com/yourorg/clickup/internal/handler/doc"
-	formHandler "github.com/yourorg/clickup/internal/handler/form"
-	goalHandler "github.com/yourorg/clickup/internal/handler/goal"
-	sprintHandler "github.com/yourorg/clickup/internal/handler/sprint"
 	folderHandler "github.com/yourorg/clickup/internal/handler/folder"
+	formHandler "github.com/yourorg/clickup/internal/handler/form"
+	gdprHandler "github.com/yourorg/clickup/internal/handler/gdpr"
+	goalHandler "github.com/yourorg/clickup/internal/handler/goal"
 	listHandler "github.com/yourorg/clickup/internal/handler/list"
 	memberHandler "github.com/yourorg/clickup/internal/handler/member"
+	mfaHandler "github.com/yourorg/clickup/internal/handler/mfa"
+	milestoneHandler "github.com/yourorg/clickup/internal/handler/milestone"
+	portfolioHandler "github.com/yourorg/clickup/internal/handler/portfolio"
 	notificationHandler "github.com/yourorg/clickup/internal/handler/notification"
+	oidcHandler "github.com/yourorg/clickup/internal/handler/oidc"
 	reportHandler "github.com/yourorg/clickup/internal/handler/report"
+	roleHandler "github.com/yourorg/clickup/internal/handler/role"
+	savedsearchHandler "github.com/yourorg/clickup/internal/handler/savedsearch"
 	searchHandler "github.com/yourorg/clickup/internal/handler/search"
+	sessionHandler "github.com/yourorg/clickup/internal/handler/session"
 	spaceHandler "github.com/yourorg/clickup/internal/handler/space"
+	sprintHandler "github.com/yourorg/clickup/internal/handler/sprint"
 	statusHandler "github.com/yourorg/clickup/internal/handler/status"
 	tagHandler "github.com/yourorg/clickup/internal/handler/tag"
 	taskHandler "github.com/yourorg/clickup/internal/handler/task"
@@ -125,8 +154,15 @@ import (
 	userHandler "github.com/yourorg/clickup/internal/handler/user"
 	viewHandler "github.com/yourorg/clickup/internal/handler/view"
 	whiteboardHandler "github.com/yourorg/clickup/internal/handler/whiteboard"
+	workloadHandler "github.com/yourorg/clickup/internal/handler/workload"
 	workspaceHandler "github.com/yourorg/clickup/internal/handler/workspace"
 )
+
+// minMigrationVersion is bumped whenever a new schema migration is added that
+// the binary depends on at runtime. /readyz fails if the DB is behind this
+// number — i.e. a freshly-deployed binary against a not-yet-migrated DB
+// stays out of the load balancer until migrations finish.
+const minMigrationVersion = 38
 
 func main() {
 	migrateOnly := flag.Bool("migrate", false, "run migrations then exit")
@@ -157,12 +193,53 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ── Observability bring-up ───────────────────────────────────────────
+	// All three are env-gated and degrade to no-ops when their primary
+	// endpoint/DSN is unset. Order: tracing first (so spans cover startup),
+	// metrics next (registry is shared across the rest of bring-up),
+	// Sentry last (just hooks into the HTTP chain).
+
+	rootCtx := context.Background()
+	traceShutdown, err := observability.InitTracing(rootCtx, observability.TraceConfig{
+		ServiceName:    cfg.OTELServiceName,
+		ServiceVersion: cfg.OTELServiceVersion,
+		Environment:    cfg.AppEnv,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+		OTLPInsecure:   cfg.OTLPInsecure,
+		SampleRatio:    cfg.OTELSampleRatio,
+	}, logger)
+	if err != nil {
+		logger.Error("otel init failed", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = traceShutdown(ctx)
+	}()
+
+	metrics := observability.NewMetrics()
+
+	sentryFlush, sentryMW, err := observability.InitSentry(observability.SentryConfig{
+		DSN:         cfg.SentryDSN,
+		Environment: cfg.AppEnv,
+		Release:     cfg.SentryRelease,
+		SampleRate:  cfg.SentrySampleRate,
+	}, logger)
+	if err != nil {
+		logger.Error("sentry init failed", "err", err)
+		os.Exit(1)
+	}
+	defer sentryFlush(2 * time.Second)
+	defer sentry.Recover() // last-ditch panic capture in main itself
+
 	pool, err := db.NewPostgres(cfg.DBDSN)
 	if err != nil {
 		logger.Error("postgres connect failed", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
+	metrics.WirePgxPoolStats(pool)
 
 	if cfg.AutoMigrate || *migrateOnly {
 		if err := migrate.Up(context.Background(), pool, cfg.MigrationsDir); err != nil {
@@ -184,10 +261,10 @@ func main() {
 			return middleware.ParseToken(cfg.JWTSecret, middleware.TokenFromRequest(r))
 		},
 		ws.AllowedOrigins{
-			"http://localhost:5173":  true, // vite dev
-			"http://127.0.0.1:5173":  true,
-			"http://localhost:8080":  true, // served by Go directly
-			"http://127.0.0.1:8080":  true,
+			"http://localhost:5173": true, // vite dev
+			"http://127.0.0.1:5173": true,
+			"http://localhost:8080": true, // served by Go directly
+			"http://127.0.0.1:8080": true,
 		},
 	)
 	hub.SetLogger(logger)
@@ -233,6 +310,13 @@ func main() {
 	fmRepo := formRepo.New(pool)
 	tplRepo := templateRepo.New(pool)
 	repRepo := reportRepo.New(pool)
+	mfaRepoImpl := mfaRepo.New(pool)
+	oidcRepoImpl := oidcRepo.New(pool)
+	roleRepoImpl := roleRepo.New(pool)
+	sessRepoImpl := sessionRepo.New(pool)
+	savedSearchRepoImpl := savedsearchRepo.New(pool)
+	milestoneRepoImpl := milestoneRepo.New(pool)
+	portfolioRepoImpl := portfolioRepo.New(pool)
 
 	// cross-cutting infra
 	dispatcher := notify.New(nRepo, hub, logger)
@@ -240,7 +324,35 @@ func main() {
 	policy := authz.New(pool) // policy layer enforced by handlers (audit, automation, etc.)
 
 	// services
-	uSvc := userSvc.New(uRepo, cfg.JWTSecret)
+	mfaSvcImpl := mfaSvc.New(mfaRepoImpl, uRepo, cfg.MFAIssuer)
+	sessSvcImpl := sessionSvc.New(sessRepoImpl, recorder)
+	uSvc := userSvc.New(uRepo, cfg.JWTSecret).
+		WithMFA(mfaSvcImpl).
+		WithSessions(sessionUserAdapter{svc: sessSvcImpl})
+	gdprSvcImpl := gdprSvc.New(pool)
+	roleSvcImpl := roleSvc.New(roleRepoImpl)
+	savedSearchSvcImpl := savedsearchSvc.New(savedSearchRepoImpl)
+	milestoneSvcImpl := milestoneSvc.New(milestoneRepoImpl, recorder)
+	workloadSvcImpl := workloadSvc.New(tRepo, workloadSvc.Lookups{
+		GetUser: func(ctx context.Context, id uuid.UUID) (*domain.User, error) {
+			return uRepo.GetByID(ctx, id)
+		},
+	})
+	portfolioSvcImpl := portfolioSvc.New(portfolioRepoImpl, recorder)
+
+	// OIDC providers — only the ones with full env config get registered.
+	var oidcProviders []oidcsvc.ProviderConfig
+	if cfg.GoogleOIDCClientID != "" && cfg.GoogleOIDCSecret != "" && cfg.GoogleOIDCRedirect != "" {
+		oidcProviders = append(oidcProviders, oidcsvc.ProviderConfig{
+			Name:         "google",
+			Issuer:       "https://accounts.google.com",
+			ClientID:     cfg.GoogleOIDCClientID,
+			ClientSecret: cfg.GoogleOIDCSecret,
+			RedirectURL:  cfg.GoogleOIDCRedirect,
+		})
+	}
+	oidcSvcImpl := oidcsvc.New(uRepo, oidcRepoImpl, cfg.JWTSecret, oidcProviders)
+
 	wSvc := workspaceSvc.New(wsRepo)
 	spSvc := spaceSvc.New(spRepo)
 	fSvc := folderSvc.New(fRepo)
@@ -322,6 +434,38 @@ func main() {
 		TimePerUser: func(ctx context.Context, wsID uuid.UUID, from, to *time.Time) ([]domain.TimeReportBucket, error) {
 			return teSvc.Report(ctx, domain.TimeEntryFilter{WorkspaceID: &wsID, From: from, To: to})
 		},
+		MyTasks: func(ctx context.Context, wsID, viewer uuid.UUID) ([]domain.Task, error) {
+			if viewer == uuid.Nil {
+				return []domain.Task{}, nil
+			}
+			return tRepo.ListByAssigneeInWorkspace(ctx, wsID, viewer, 50)
+		},
+		Activity: func(ctx context.Context, wsID uuid.UUID, limit int) ([]domain.AuditEntry, error) {
+			if limit <= 0 {
+				limit = 25
+			}
+			return auSvc.List(ctx, domain.AuditFilter{WorkspaceID: &wsID, Limit: limit})
+		},
+		GoalProgress: func(ctx context.Context, wsID uuid.UUID) ([]dashboardSvc.GoalProgressItem, error) {
+			goals, err := gSvc.ListByWorkspace(ctx, wsID)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]dashboardSvc.GoalProgressItem, 0, len(goals))
+			for _, g := range goals {
+				if g.Archived {
+					continue
+				}
+				out = append(out, dashboardSvc.GoalProgressItem{
+					GoalID:   g.ID,
+					Name:     g.Name,
+					DueAt:    g.DueAt,
+					Progress: g.Progress,
+					OwnerID:  g.OwnerID,
+				})
+			}
+			return out, nil
+		},
 	}, recorder)
 	wbSvc := whiteboardSvc.New(wbRepo, hub, recorder)
 	fmSvc := formSvc.New(fmRepo, func(ctx context.Context, listID uuid.UUID, name, description string) (*domain.Task, error) {
@@ -382,7 +526,9 @@ func main() {
 	tSvc.SetEngine(engine)
 
 	// handlers
-	uH := userHandler.New(uSvc)
+	uH := userHandler.New(uSvc).
+		WithMetrics(metrics).
+		WithAdminDeps(policy, mRepo, mSvc)
 	wH := workspaceHandler.New(wSvc)
 	spH := spaceHandler.New(spSvc, policy)
 	fH := folderHandler.New(fSvc, policy)
@@ -394,8 +540,8 @@ func main() {
 	tgH := tagHandler.New(tgSvc)
 	atH := attachmentHandler.New(atSvc, cfg.AttachmentMaxBytes)
 	nH := notificationHandler.New(nSvc)
-	auH := auditHandler.New(auSvc)
-	mH := memberHandler.New(mSvc)
+	auH := auditHandler.NewWithPolicy(auSvc, policy)
+	mH := memberHandler.NewWithPolicy(mSvc, policy)
 	vH := viewHandler.New(vSvc, policy)
 	cfH := customfieldHandler.New(cfSvc)
 	teH := timeentryHandler.New(teSvc)
@@ -411,18 +557,55 @@ func main() {
 	fmH := formHandler.New(fmSvc)
 	tplH := templateHandler.New(tplSvc)
 	repH := reportHandler.New(repSvc)
+	mfaH := mfaHandler.New(mfaSvcImpl)
+	oidcH := oidcHandler.New(oidcSvcImpl, cfg.OIDCSuccessRedirect, cfg.OIDCFailureRedirect, cfg.OIDCCookieSecure).
+		WithSessions(sessSvcImpl)
+	gdprH := gdprHandler.New(gdprSvcImpl, policy)
+	roleH := roleHandler.New(roleSvcImpl, policy)
+	sessH := sessionHandler.New(sessSvcImpl)
+	savedSearchH := savedsearchHandler.New(savedSearchSvcImpl)
+	milestoneH := milestoneHandler.New(milestoneSvcImpl)
+	workloadH := workloadHandler.New(workloadSvcImpl)
+	portfolioH := portfolioHandler.New(portfolioSvcImpl)
 
 	r := chi.NewRouter()
+	// Order matters here:
+	//   1. RequestID stamps every request with a stable id chimw.GetReqID can read.
+	//   2. RequestLogger derives a per-request logger that carries that id.
+	//   3. RealIP, Recoverer, CORS — unchanged.
+	//   4. Sentry middleware (no-op when DSN unset) catches panics.
+	//   5. HTTPMetrics records RED for everything below.
+	//   6. Logger emits one JSON line per request using the per-request logger.
 	r.Use(chimw.RequestID)
+	r.Use(middleware.RequestLogger(logger))
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
 	r.Use(corsMiddleware())
+	r.Use(sentryMW)
+	r.Use(middleware.HTTPMetrics(metrics))
 	r.Use(middleware.Logger(logger))
 
+	// Liveness — always 200 unless the binary itself is wedged.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	// Readiness — 200 only when DB is reachable, migrations are at the
+	// expected version, and Redis is reachable (if configured). The
+	// orchestrator should point its readiness probe at this URL.
+	probes := map[string]observability.Probe{
+		"postgres":   observability.PgxProbe(pool),
+		"migrations": observability.MigrationsProbe(pool, minMigrationVersion),
+	}
+	if rdbClient != nil {
+		probes["redis"] = observability.RedisProbe(rdbClient)
+	}
+	r.Method(http.MethodGet, "/readyz", observability.HealthHandler(probes, true))
+
+	// Prometheus exposition. Mount under /metrics with no auth — scraper
+	// access is restricted at the network layer in production.
+	r.Method(http.MethodGet, "/metrics", metrics.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// API root – returns version info and available endpoint groups.
@@ -433,9 +616,12 @@ func main() {
 				"version": "v1",
 				"status":  "ok",
 				"endpoints": []string{
-					"/api/v1/auth/register",
 					"/api/v1/auth/login",
+					"/api/v1/auth/mfa/verify",
+					"/api/v1/auth/oidc/{provider}/login",
+					"/api/v1/auth/oidc/{provider}/callback",
 					"/api/v1/me",
+					"/api/v1/me/mfa",
 					"/api/v1/workspaces",
 					"/api/v1/spaces",
 					"/api/v1/folders",
@@ -464,6 +650,12 @@ func main() {
 					"/api/v1/templates",
 					"/api/v1/reports",
 					"/api/v1/credentials",
+					"/api/v1/workspaces/{workspaceID}/audit/export",
+					"/api/v1/workspaces/{workspaceID}/gdpr/export",
+					"/api/v1/permissions",
+					"/api/v1/workspaces/{workspaceID}/roles",
+					"/api/v1/workspaces/{workspaceID}/users",
+					"/api/v1/admin/users",
 				},
 			})
 		})
@@ -472,12 +664,25 @@ func main() {
 			pub.Use(middleware.RateLimit(rdbClient, 10, time.Minute))
 			uH.PublicRoutes(pub)
 			fmH.PublicRoutes(pub)
+			oidcH.Routes(pub)
 		})
 
 		r.Group(func(pr chi.Router) {
 			pr.Use(middleware.Auth(cfg.JWTSecret))
+			// SessionGate runs *after* Auth so the jti is in context. Tokens
+			// without a jti (legacy, pre-sessions) pass through; tokens whose
+			// session row was revoked are rejected with 401.
+			pr.Use(middleware.SessionGate(sessSvcImpl, time.Minute))
 			pr.Use(middleware.RateLimit(rdbClient, 300, time.Minute))
 			uH.PrivateRoutes(pr)
+			uH.AdminRoutes(pr)
+			uH.AdminGlobalRoutes(pr)
+			mfaH.Routes(pr)
+			sessH.Routes(pr)
+			savedSearchH.Routes(pr)
+			milestoneH.Routes(pr)
+			workloadH.Routes(pr)
+			portfolioH.Routes(pr)
 			fmH.PrivateRoutes(pr)
 			wbH.Routes(pr)
 			tplH.Routes(pr)
@@ -506,6 +711,8 @@ func main() {
 			gH.Routes(pr)
 			spH2.Routes(pr)
 			dashH.Routes(pr)
+			gdprH.Routes(pr)
+			roleH.Routes(pr)
 		})
 	})
 
@@ -571,6 +778,34 @@ func resolveCredentialsKey(cfg *config.Config, logger *slog.Logger) ([]byte, err
 		key[i] = seed[i%len(seed)]
 	}
 	return key, nil
+}
+
+// sessionUserAdapter bridges *sessionSvc.Service to the user service's
+// SessionIssuer interface — same type signature, different field names.
+// We could rename the user-service input struct to match, but keeping
+// each service's input shape local avoids forcing one to depend on the
+// other's package.
+type sessionUserAdapter struct{ svc *sessionSvc.Service }
+
+func (a sessionUserAdapter) Issue(ctx context.Context, in userSvc.SessionIssueInput) error {
+	var ip *netip.Addr
+	if in.IP != "" {
+		// r.RemoteAddr is "host:port"; strip the port if present.
+		host := in.IP
+		if h, _, err := net.SplitHostPort(in.IP); err == nil {
+			host = h
+		}
+		if a, err := netip.ParseAddr(host); err == nil {
+			ip = &a
+		}
+	}
+	return a.svc.Issue(ctx, sessionSvc.IssueInput{
+		JTI:       in.JTI,
+		UserID:    in.UserID,
+		UserAgent: in.UserAgent,
+		IP:        ip,
+		ExpiresAt: in.ExpiresAt,
+	})
 }
 
 func corsMiddleware() func(http.Handler) http.Handler {

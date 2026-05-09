@@ -27,6 +27,11 @@ type Task struct {
 	RecurringParentID *uuid.UUID `json:"recurring_parent_id,omitempty"`
 	SprintID          *uuid.UUID `json:"sprint_id,omitempty"`
 	Points            *int       `json:"points,omitempty"`
+	// EstimateSeconds is the planned duration the assignee committed
+	// to. Distinct from Points (which is unitless story points used
+	// for sprint velocity). Surfaced on the workload view so capacity
+	// planning is meaningful even when not running sprints.
+	EstimateSeconds   *int       `json:"estimate_seconds,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }

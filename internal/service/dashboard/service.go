@@ -21,6 +21,26 @@ type DataProviders struct {
 	TaskCount   func(ctx context.Context, listID uuid.UUID) (map[string]int, error)
 	Velocity    func(ctx context.Context, listID uuid.UUID) ([]VelocityPoint, error)
 	TimePerUser func(ctx context.Context, workspaceID uuid.UUID, from, to *time.Time) ([]domain.TimeReportBucket, error)
+	// MyTasks — open tasks assigned to viewerID inside workspaceID.
+	// Returns the raw tasks; the FE buckets them.
+	MyTasks func(ctx context.Context, workspaceID, viewerID uuid.UUID) ([]domain.Task, error)
+	// Activity — recent audit log rows for the workspace. limit is
+	// the page size (default 25 if zero).
+	Activity func(ctx context.Context, workspaceID uuid.UUID, limit int) ([]domain.AuditEntry, error)
+	// GoalProgress — workspace goals with their current progress
+	// percentage and due-at, sorted by due-soonest.
+	GoalProgress func(ctx context.Context, workspaceID uuid.UUID) ([]GoalProgressItem, error)
+}
+
+// GoalProgressItem is one row in the goal-progress widget. Mirrors
+// domain.Goal's display-relevant fields plus the percentage so the
+// FE doesn't need to recompute.
+type GoalProgressItem struct {
+	GoalID    uuid.UUID  `json:"goal_id"`
+	Name      string     `json:"name"`
+	DueAt     *time.Time `json:"due_at,omitempty"`
+	Progress  float64    `json:"progress"`
+	OwnerID   *uuid.UUID `json:"owner_id,omitempty"`
 }
 
 type VelocityPoint struct {
@@ -119,10 +139,13 @@ type UpdateWidgetInput struct {
 }
 
 var validWidgets = map[string]bool{
-	domain.WidgetKindBurndown:    true,
-	domain.WidgetKindVelocity:    true,
-	domain.WidgetKindTaskCount:   true,
-	domain.WidgetKindTimePerUser: true,
+	domain.WidgetKindBurndown:     true,
+	domain.WidgetKindVelocity:     true,
+	domain.WidgetKindTaskCount:    true,
+	domain.WidgetKindTimePerUser:  true,
+	domain.WidgetKindMyTasks:      true,
+	domain.WidgetKindActivity:     true,
+	domain.WidgetKindGoalProgress: true,
 }
 
 func (s *Service) AddWidget(ctx context.Context, dashboardID uuid.UUID, in CreateWidgetInput) (*domain.Widget, error) {
@@ -183,11 +206,17 @@ func (s *Service) DeleteWidget(ctx context.Context, id uuid.UUID) error {
 
 // WidgetData resolves a widget's data by dispatching on kind + config.
 // Widget config shape:
-//   burndown:      { sprint_id: UUID }
-//   velocity:      { list_id: UUID, last?: int }
-//   task_count:    { list_id: UUID }
-//   time_per_user: { workspace_id: UUID, from?: RFC3339, to?: RFC3339 }
-func (s *Service) WidgetData(ctx context.Context, widgetID uuid.UUID) (any, error) {
+//   burndown:       { sprint_id: UUID }
+//   velocity:       { list_id: UUID, last?: int }
+//   task_count:     { list_id: UUID }
+//   time_per_user:  { workspace_id: UUID, from?: RFC3339, to?: RFC3339 }
+//   my_tasks:       { workspace_id: UUID }     (viewer comes from caller)
+//   activity:       { workspace_id: UUID, limit?: int }
+//   goal_progress:  { workspace_id: UUID }
+//
+// viewer is the caller's userID — used for widgets that filter by viewer
+// (my_tasks). Widgets that don't need it can pass uuid.Nil.
+func (s *Service) WidgetData(ctx context.Context, widgetID, viewer uuid.UUID) (any, error) {
 	w, err := s.repo.GetWidget(ctx, widgetID)
 	if err != nil || w == nil {
 		return nil, err
@@ -223,6 +252,37 @@ func (s *Service) WidgetData(ctx context.Context, widgetID uuid.UUID) (any, erro
 		from := parseTimeP(cfg["from"])
 		to := parseTimeP(cfg["to"])
 		return s.providers.TimePerUser(ctx, id, from, to)
+	case domain.WidgetKindMyTasks:
+		id, ok := parseUUID(cfg["workspace_id"])
+		if !ok {
+			return nil, errors.New("workspace_id required")
+		}
+		if s.providers.MyTasks == nil {
+			return []domain.Task{}, nil
+		}
+		return s.providers.MyTasks(ctx, id, viewer)
+	case domain.WidgetKindActivity:
+		id, ok := parseUUID(cfg["workspace_id"])
+		if !ok {
+			return nil, errors.New("workspace_id required")
+		}
+		limit := 25
+		if v, ok := cfg["limit"].(float64); ok && v > 0 && v <= 100 {
+			limit = int(v)
+		}
+		if s.providers.Activity == nil {
+			return []domain.AuditEntry{}, nil
+		}
+		return s.providers.Activity(ctx, id, limit)
+	case domain.WidgetKindGoalProgress:
+		id, ok := parseUUID(cfg["workspace_id"])
+		if !ok {
+			return nil, errors.New("workspace_id required")
+		}
+		if s.providers.GoalProgress == nil {
+			return []GoalProgressItem{}, nil
+		}
+		return s.providers.GoalProgress(ctx, id)
 	}
 	return nil, errors.New("unknown widget kind")
 }

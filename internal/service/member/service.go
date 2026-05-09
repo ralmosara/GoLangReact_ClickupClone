@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,13 @@ import (
 	"github.com/yourorg/clickup/internal/domain"
 	"github.com/yourorg/clickup/internal/ws"
 )
+
+// ErrUserNotFound is returned by AddWorkspaceMember when the supplied
+// email doesn't map to a registered user. The handler translates this to
+// a 404 with a body that points the admin at the User Management page,
+// which is the only path to create new accounts now that self-registration
+// and member-create-on-missing are both gone.
+var ErrUserNotFound = errors.New("no user with that email — create them in User Management first")
 
 type Service struct {
 	repo  domain.MemberRepo
@@ -24,6 +32,45 @@ func New(repo domain.MemberRepo, users domain.UserRepo, hub *ws.Hub, rec *audit.
 	return &Service{repo: repo, users: users, hub: hub, audit: rec}
 }
 
+// InviteLookup is the response shape for the pre-invite lookup endpoint.
+// It tells the inviting admin whether the email maps to an existing local
+// account, and if so whether that user is already a member of the
+// workspace they're inviting into. The frontend uses it to adapt the
+// invite form: hide the password field for existing users, show a
+// "already a member" hint when applicable.
+type InviteLookup struct {
+	Exists        bool   `json:"exists"`
+	Name          string `json:"name,omitempty"`
+	AlreadyMember bool   `json:"already_member"`
+}
+
+// LookupForInvite resolves an email to (account_exists, is_already_member)
+// in the context of a workspace. The auth gate (member.invite on the
+// workspace) is enforced at the handler layer; an admin can already learn
+// the same information by trying to invite, so this endpoint only makes
+// the existing oracle explicit.
+func (s *Service) LookupForInvite(ctx context.Context, wsID uuid.UUID, email string) (*InviteLookup, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, errors.New("email is required")
+	}
+	u, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return &InviteLookup{Exists: false}, nil
+	}
+	isMember, err := s.repo.IsWorkspaceMember(ctx, wsID, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &InviteLookup{Exists: true, Name: u.Name, AlreadyMember: isMember}, nil
+}
+
+// AddInput is the request body for the workspace invite endpoint.
+// Only Email and Role are honoured — user creation has moved to the User
+// Management page, so this endpoint is strictly invite-existing.
 type AddInput struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
@@ -32,12 +79,19 @@ type AddInput struct {
 // --- workspace ---------------------------------------------------------------
 
 func (s *Service) AddWorkspaceMember(ctx context.Context, actor, wsID uuid.UUID, in AddInput) (*domain.Member, error) {
+	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
+	if in.Email == "" {
+		return nil, errors.New("email is required")
+	}
 	u, err := s.users.GetByEmail(ctx, in.Email)
 	if err != nil {
 		return nil, err
 	}
 	if u == nil {
-		return nil, errors.New("no user with that email — invite flow pending")
+		// Strict invite-existing only. Account creation has moved to the
+		// User Management page; the handler turns this into a 404 with a
+		// body that points the admin there.
+		return nil, ErrUserNotFound
 	}
 	if err := s.repo.AddWorkspaceMember(ctx, wsID, u.ID, in.Role); err != nil {
 		return nil, err
@@ -88,13 +142,16 @@ func (s *Service) ListWorkspaceMembers(ctx context.Context, wsID uuid.UUID) ([]d
 
 // --- space -------------------------------------------------------------------
 
+// AddSpaceMember keeps the existing "user must already exist" semantics —
+// space-level invites are within an existing workspace, so the user has
+// already been created by the workspace-level admin.
 func (s *Service) AddSpaceMember(ctx context.Context, actor, spaceID uuid.UUID, in AddInput) (*domain.Member, error) {
 	u, err := s.users.GetByEmail(ctx, in.Email)
 	if err != nil {
 		return nil, err
 	}
 	if u == nil {
-		return nil, errors.New("no user with that email")
+		return nil, errors.New("no user with that email — invite them to the workspace first")
 	}
 	if err := s.repo.AddSpaceMember(ctx, spaceID, u.ID, in.Role); err != nil {
 		return nil, err

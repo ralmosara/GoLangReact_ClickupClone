@@ -208,7 +208,11 @@ func (h *Handler) widgetData(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	res, err := h.svc.WidgetData(r.Context(), id)
+	// Pull viewer for widgets that filter on caller (my_tasks). Anonymous
+	// access slips through with uuid.Nil — those widgets just return an
+	// empty page rather than 401, since the route itself is auth-gated.
+	viewer, _ := middleware.UserID(r.Context())
+	res, err := h.svc.WidgetData(r.Context(), id, viewer)
 	if err != nil {
 		httpx.Err(w, http.StatusBadRequest, err.Error())
 		return

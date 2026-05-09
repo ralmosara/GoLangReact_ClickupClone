@@ -1,103 +1,79 @@
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { useAuthStore } from '../../store/auth'
-import { api } from '../../lib/api'
-import { Button, Input } from '../../components/ui'
-import type { User } from '../../types'
+import { useSearchParams } from 'react-router-dom'
+import { Bell, Building2, Palette, Shield, User as UserIcon } from 'lucide-react'
 
+import { cn } from '../../lib/utils'
+import { t } from '../../lib/i18n'
+import { ProfileTab } from './tabs/ProfileTab'
+import { SecurityTab } from './tabs/SecurityTab'
+import { AppearanceTab } from './tabs/AppearanceTab'
+import { NotificationsTab } from './tabs/NotificationsTab'
+import { WorkspaceTab } from './tabs/WorkspaceTab'
+
+type TabKey = 'profile' | 'security' | 'notifications' | 'appearance' | 'workspace'
+
+const TABS: { key: TabKey; labelKey: string; Icon: typeof UserIcon }[] = [
+  { key: 'profile',       labelKey: 'settings.profile.tab',       Icon: UserIcon },
+  { key: 'security',      labelKey: 'settings.security.tab',      Icon: Shield },
+  { key: 'notifications', labelKey: 'settings.notifications.tab', Icon: Bell },
+  { key: 'appearance',    labelKey: 'settings.appearance.tab',    Icon: Palette },
+  { key: 'workspace',     labelKey: 'settings.workspace.tab',     Icon: Building2 },
+]
+
+/**
+ * SettingsPage is now a tabbed hub. The active tab persists in the URL
+ * (?tab=security) so a user can deep-link to a specific section, the
+ * back button works as expected, and reloading lands them where they
+ * were. Falls back to "profile" for legacy/missing values.
+ */
 export function SettingsPage() {
-  const { user, setAuth, token } = useAuthStore()
-  const [name, setName] = useState(user?.name ?? '')
-  const [saved, setSaved] = useState(false)
-
-  const updateProfile = useMutation({
-    mutationFn: () => api.get('me').json<User>(),
-    onSuccess: (updated) => {
-      if (token) setAuth(token, { ...updated, name })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    },
-  })
+  const [params, setParams] = useSearchParams()
+  const tab = (params.get('tab') as TabKey) || 'profile'
+  const active: TabKey = TABS.some((t) => t.key === tab) ? tab : 'profile'
 
   return (
-    <div className="max-w-xl mx-auto px-6 py-10 animate-slide-up">
-      {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-xl font-bold text-ink-1">Settings</h1>
-        <p className="text-sm text-ink-4 mt-1">Manage your account and preferences.</p>
-      </div>
-
-      {/* Profile section */}
-      <section className="bg-surface border border-ink-5/30 rounded-2xl shadow-card p-6 mb-4">
-        <div className="flex items-center gap-4 mb-6 pb-5 border-b border-ink-5/20">
-          <div className="w-12 h-12 rounded-xl bg-brand-gradient flex items-center justify-center text-white text-lg font-bold shadow-button">
-            {user?.name?.charAt(0).toUpperCase() ?? '?'}
-          </div>
-          <div>
-            <p className="font-semibold text-ink-1 text-sm">{user?.name ?? 'User'}</p>
-            <p className="text-xs text-ink-4">{user?.email ?? ''}</p>
-          </div>
-        </div>
-
-        <h2 className="text-sm font-semibold text-ink-1 mb-4">Profile</h2>
-        <div className="space-y-4">
-          <Input
-            label="Display name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-          />
-          <Input
-            label="Email"
-            value={user?.email ?? ''}
-            disabled
-            hint="Email cannot be changed."
-          />
-        </div>
-        <div className="mt-5 flex items-center gap-3">
-          <Button
-            onClick={() => updateProfile.mutate()}
-            disabled={updateProfile.isPending || name === user?.name || !name.trim()}
-            loading={updateProfile.isPending}
-          >
-            Save changes
-          </Button>
-          {saved && (
-            <span className="flex items-center gap-1.5 text-sm text-green-600 animate-fade-in">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              Saved
-            </span>
-          )}
-        </div>
-      </section>
-
-      {/* Appearance section */}
-      <section className="bg-surface border border-ink-5/30 rounded-2xl shadow-card p-6 mb-4">
-        <h2 className="text-sm font-semibold text-ink-1 mb-1">Appearance</h2>
-        <p className="text-xs text-ink-4 mb-4">Theme customization coming soon.</p>
-        <div className="flex gap-2">
-          {['Light', 'Dark', 'System'].map((t) => (
-            <button
-              key={t}
-              disabled
-              className="px-4 py-2 text-xs rounded-lg border border-ink-5/30 text-ink-4 cursor-not-allowed"
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Danger zone */}
-      <section className="bg-surface border border-red-200/60 rounded-2xl p-6">
-        <h2 className="text-sm font-semibold text-red-600 mb-1">Danger Zone</h2>
-        <p className="text-xs text-ink-4 mb-4">
-          Deleting your account is permanent and cannot be undone.
+    <div className="max-w-4xl mx-auto px-6 py-8 animate-slide-up">
+      <header className="mb-6">
+        <h1 className="text-xl font-bold text-ink-1 dark:text-white">{t('settings.title')}</h1>
+        <p className="text-sm text-ink-4 mt-1 dark:text-white/50">
+          Manage your account, security, appearance, and workspace preferences.
         </p>
-        <Button variant="danger" disabled size="sm">Delete account</Button>
-      </section>
+      </header>
+
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Vertical tab nav on desktop, scrollable horizontal pills on mobile */}
+        <nav
+          aria-label="Settings sections"
+          className="md:w-48 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-6 px-6 md:mx-0 md:px-0 pb-2 md:pb-0"
+        >
+          {TABS.map(({ key, labelKey, Icon }) => {
+            const isActive = key === active
+            return (
+              <button
+                key={key}
+                onClick={() => setParams({ tab: key }, { replace: true })}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  'inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium transition-colors shrink-0',
+                  isActive
+                    ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200'
+                    : 'text-ink-2 hover:bg-ink-1/[0.04] hover:text-ink-1 dark:text-white/70 dark:hover:bg-white/5 dark:hover:text-white',
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                {t(labelKey)}
+              </button>
+            )
+          })}
+        </nav>
+
+        <div className="flex-1 min-w-0">
+          {active === 'profile'       && <ProfileTab />}
+          {active === 'security'      && <SecurityTab />}
+          {active === 'notifications' && <NotificationsTab />}
+          {active === 'appearance'    && <AppearanceTab />}
+          {active === 'workspace'     && <WorkspaceTab />}
+        </div>
+      </div>
     </div>
   )
 }

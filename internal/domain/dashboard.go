@@ -8,12 +8,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// Widget kinds — the frontend picks a component per kind.
+// Widget kinds — the frontend picks a component per kind. New kinds:
+//
+//   * my_tasks    — tasks assigned to the calling user, grouped by due
+//                   bucket (overdue / today / this_week / later). Config
+//                   is just { workspace_id }; viewer = caller.
+//   * activity    — recent activity rows pulled off audit_log, scoped
+//                   to the workspace. Config { workspace_id, limit? }.
+//   * goal_progress — per-goal % complete + due-at, sorted by due-soon.
+//                     Config { workspace_id }.
 const (
-	WidgetKindBurndown    = "burndown"
-	WidgetKindVelocity    = "velocity"
-	WidgetKindTaskCount   = "task_count"
-	WidgetKindTimePerUser = "time_per_user"
+	WidgetKindBurndown     = "burndown"
+	WidgetKindVelocity     = "velocity"
+	WidgetKindTaskCount    = "task_count"
+	WidgetKindTimePerUser  = "time_per_user"
+	WidgetKindMyTasks      = "my_tasks"
+	WidgetKindActivity     = "activity"
+	WidgetKindGoalProgress = "goal_progress"
 )
 
 type Dashboard struct {
