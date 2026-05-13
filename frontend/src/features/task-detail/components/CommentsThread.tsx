@@ -19,7 +19,7 @@ export function CommentsThread({ taskId }: { taskId: string }) {
 
   const { data: comments = [] } = useQuery({
     queryKey: ['comments', taskId],
-    queryFn: () => api.get(`tasks/${taskId}/comments`).json<Comment[]>(),
+    queryFn: () => api.get(`tasks/${taskId}/comments`).json<Comment[]>().then((r) => r ?? []),
   })
 
   const post = useMutation({
@@ -93,7 +93,7 @@ function CommentRow({
 
   const { data: replies = [] } = useQuery({
     queryKey: ['comment-replies', comment.id],
-    queryFn: () => api.get(`comments/${comment.id}/replies`).json<Comment[]>(),
+    queryFn: () => api.get(`comments/${comment.id}/replies`).json<Comment[]>().then((r) => r ?? []),
     enabled: showReplies && comment.reply_count > 0,
   })
 
