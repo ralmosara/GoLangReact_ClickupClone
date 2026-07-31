@@ -61,6 +61,20 @@ services:
     depends_on:
       - backend
 
+  seeder:
+    image: golang:1.25-alpine
+    profiles:
+      - tools
+    environment:
+      DB_DSN: postgres://postgres:postgres@postgres:5432/clickup?sslmode=disable
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["go", "run", "./scripts/seed.go"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   backend-storage:
