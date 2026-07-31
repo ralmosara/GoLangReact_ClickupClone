@@ -1,6 +1,7 @@
 # ClickUp Clone — Go + React
 
 ## Stack
+
 - **Backend**: Go 1.22, chi router, pgx/v5, gorilla/websocket, JWT
 - **Frontend**: React 18, Vite, TanStack Query, Zustand, Tailwind CSS
 - **Data**: PostgreSQL 14+, Redis (optional — used for rate limiting)
@@ -14,9 +15,11 @@ Pick one of the three paths below.
 Brings up Postgres, Redis, the Go backend, and the React frontend (served by nginx) with a single command. No host installs of Postgres / Redis / Node required.
 
 Prerequisites:
+
 - Docker 24+ with Compose v2
 
 Steps:
+
 ```bash
 # 1. (Optional) set a real JWT secret — defaults to change-me-in-production
 export JWT_SECRET=$(openssl rand -hex 32)
@@ -28,6 +31,7 @@ docker compose up --build
 Open http://localhost:5173 — nginx serves the SPA and proxies `/api` and `/ws` to the backend over the compose network.
 
 Useful commands:
+
 ```bash
 docker compose logs -f backend       # tail server logs
 docker compose down                  # stop (keeps volumes)
@@ -35,12 +39,12 @@ docker compose down -v               # stop + wipe Postgres data and uploads
 ```
 
 Services and ports:
-| Service  | Image / build      | Host port |
+| Service | Image / build | Host port |
 |----------|--------------------|-----------|
-| frontend | `frontend/`        | 5173      |
-| backend  | `Dockerfile`       | 8080      |
-| postgres | `postgres:16`      | 5432      |
-| redis    | `redis:7`          | 6379      |
+| frontend | `frontend/` | 5173 |
+| backend | `Dockerfile` | 8080 |
+| postgres | `postgres:16` | 5432 |
+| redis | `redis:7` | 6379 |
 
 Migrations apply automatically on backend startup. Attachments persist in the `backend-storage` volume; Postgres data persists in `postgres-data`.
 
@@ -62,21 +66,26 @@ On Windows/macOS, use `host.docker.internal` instead of `localhost` in `DB_DSN` 
 ### Option C — Local dev (no Docker)
 
 Prerequisites (install locally):
+
 - Go 1.22+
 - Node.js 20+
 - PostgreSQL 14+ running on `localhost:5432`
 - Redis (optional) running on `localhost:6379`
 
 #### Install Postgres on Windows
+
 Download the installer from https://www.postgresql.org/download/windows/ and run:
+
 ```bash
 createdb -U postgres clickup
 ```
 
 #### Install Redis on Windows (optional)
+
 Use [Memurai](https://www.memurai.com/) or WSL. If Redis isn't running the server still starts — rate limiting is skipped.
 
 #### Quick start
+
 ```bash
 # 1. Copy env and edit DB_DSN
 cp .env.example .env
@@ -90,9 +99,11 @@ make run
 # 4. In another terminal, start the frontend
 make fe
 ```
+
 App runs at http://localhost:5173 — Vite proxies `/api` and `/ws` to `:8080`.
 
 #### Running the Go backend without `make`
+
 On Windows (or anywhere `make` isn't installed), run the equivalent `go` commands directly from the repo root:
 
 ```bash
@@ -101,6 +112,8 @@ go run ./cmd/server -migrate
 
 # Run the server (auto-applies migrations on boot when AUTO_MIGRATE=true)
 go run ./cmd/server
+
+.\server.exe
 
 # Build a static binary into ./bin
 go build -o bin/server ./cmd/server
@@ -116,6 +129,7 @@ go mod tidy
 The server reads config from `.env` in the working directory, so always invoke these from the repo root. It listens on `:8080` by default — override with `PORT=...` in `.env`. Logs stream to stdout; press `Ctrl+C` to stop.
 
 ## Migrations
+
 The server has a built-in forward-only migration runner — no `golang-migrate` CLI required.
 It reads `migrations/*.up.sql` in lexicographic order and tracks applied versions in the `schema_migrations` table.
 
@@ -147,13 +161,15 @@ out-of-band; they log in via `/auth/login` and can change it from Settings.
 All endpoints are under `/api/v1`. Auth is via `Authorization: Bearer <token>`.
 
 Public:
+
 - ~~`POST /auth/register`~~ — **removed**: self-registration disabled. Use the
   workspace member-invite flow below to create new users.
-- `POST /auth/login`        `{ email, password }`
-- `POST /auth/mfa/verify`   `{ challenge_token, code }` (only after MFA is enrolled)
+- `POST /auth/login` `{ email, password }`
+- `POST /auth/mfa/verify` `{ challenge_token, code }` (only after MFA is enrolled)
 - `GET  /auth/oidc/{provider}/login` — start an OIDC sign-in (when configured)
 
 Private (require token):
+
 - `GET  /me`
 - `POST /workspaces`, `GET /workspaces`
 - `POST /workspaces/{workspaceID}/members` `{ email, role }` — invite an **already-registered** user. Returns `404` with `{reason: "user_not_found"}` when the email isn't on file — create the user via the User Management endpoints below.
@@ -165,6 +181,7 @@ Private (require token):
 - `GET  /permissions`, `GET /workspaces/{id}/roles`, `GET /workspaces/{id}/roles/effective`
 
 User management (require `user.manage` permission — granted to owner + admin built-ins):
+
 - `GET    /workspaces/{wsID}/users` — list workspace users with role & joined-at
 - `POST   /workspaces/{wsID}/users` `{ email, name, password, role }` — create account + add as workspace member
 - `PATCH  /workspaces/{wsID}/users/{userID}` `{ name }` — update display name
@@ -176,6 +193,7 @@ User management (require `user.manage` permission — granted to owner + admin b
 WebSocket at `/ws` — send `{"action":"join","room":"list:<uuid>"}` to subscribe to task events for that list.
 
 ## Project structure
+
 ```
 clickup/
 ├── cmd/server/main.go
@@ -204,8 +222,10 @@ clickup/
 ```
 
 ## Dependency flow
+
 ```
 handler → service → repository → PostgreSQL
                  ↘ ws.Hub      → WebSocket clients
 ```
+
 Each layer depends only on the `domain/` interfaces — never on concrete implementations.
